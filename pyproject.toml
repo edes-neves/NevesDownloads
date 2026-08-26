@@ -1,0 +1,116 @@
+[project]
+name = "neves-downloads"
+version = "1.0.0"
+description = "Gerenciador de downloads de vídeos e áudios com interface moderna e suporte a playlists."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+authors = [
+    {name = "José Edes Neves", email = "edes.neves7@gmail.com"},
+]
+keywords = ["downloader", "youtube", "audio", "video", "yt-dlp", "gui"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Multimedia :: Sound/Audio",
+]
+dependencies = [
+    "customtkinter>=5.2.0,<7",
+    "pillow>=10.0.0,<13",
+    "pystray>=0.19.0,<1",
+    "yt-dlp[default]>=2024.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0,<10",
+    "ruff>=0.4.0,<1",
+    "mypy>=1.10.0,<3",
+    "pre-commit>=3.5.0,<5",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "N802",   # function name should be lowercase (some Tkinter conventions)
+    "N803",   # argument name should be lowercase
+    "N806",   # variable in function should be lowercase
+    "UP007",  # use X | Y for union types (not yet for this codebase)
+    "B008",   # do not perform function calls in argument defaults
+    "SIM108", # use ternary operator (often less readable)
+    "RUF012", # mutable class variables (Tkinter StringVar etc.)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+ignore_missing_imports = true
+show_error_codes = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = [
+    "customtkinter.*",
+    "pystray.*",
+    "PIL.*",
+    "yt_dlp.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "app.ui.download_handler",
+    "app.ui.clipboard_handler",
+    "app.ui.tray_handler",
+]
+disable_error_code = ["attr-defined"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"

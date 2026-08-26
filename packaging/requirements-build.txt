@@ -1,0 +1,4 @@
+# Dependências de build/empacotamento (instale com: pip install -r requirements-build.txt)
+pyinstaller>=6.0,<7
+# Opcional, para validação e build de AppImage em CI
+# (appimagetool é baixado pelo script build_linux.sh quando --appimage)

@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+
+# Ambiente virtual
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+data/logs/
+
+# Ferramentas baixadas pelos scripts de build (ex.: appimagetool)
+.tools/
+
+# Binários de build (AppImage gerados)
+*.AppImage
+
+# Stale build artifacts
+AppDir/
+tema/
+
+# PyInstaller
+build/
+dist/
+
+# pytest
+.pytest_cache/
+
+# mypy
+.mypy_cache/
+
+# ruff
+.ruff_cache/
+
+# Dados do app (gerado em runtime)
+*.log
+
+
+# Repositório externo de referência
+circle-flags/
+data/logs
