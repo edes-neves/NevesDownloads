@@ -365,6 +365,8 @@ _PT_BR: dict[str, str] = {
     "updater.failed": "Falha ao atualizar yt-dlp: {error}",
     "updater.timeout": "Tempo esgotado ao tentar atualizar yt-dlp (120s).",
     "updater.unexpected_error": "Erro inesperado ao atualizar yt-dlp: {error}",
+    "updater.app_updated": "Aplicativo atualizado para a versão {version}. Reinicie para usar.",
+    "updater.install_failed": "Falha ao instalar atualização: {error}",
     # ── App updater (GitHub Releases) ──
     "app_updater.checking": "Verificando atualizações...",
     "app_updater.available": "Nova versão disponível: {latest} (atual: {current})",
@@ -719,6 +721,8 @@ _EN_US: dict[str, str] = {
     "updater.failed": "Failed to update yt-dlp: {error}",
     "updater.timeout": "Timeout while trying to update yt-dlp (120s).",
     "updater.unexpected_error": "Unexpected error updating yt-dlp: {error}",
+    "updater.app_updated": "Application updated to version {version}. Please restart to use it.",
+    "updater.install_failed": "Failed to install update: {error}",
     # ── App updater (GitHub Releases) ──
     "app_updater.checking": "Checking for updates...",
     "app_updater.available": "New version available: {latest} (current: {current})",

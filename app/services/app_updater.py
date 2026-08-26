@@ -27,8 +27,14 @@ _USER_AGENT = f"{APP_NAME}/{APP_VERSION}"
 
 def _get_executable_path() -> Path | None:
     """Retorna o caminho do executável atual (AppImage ou script Python)."""
+    import os
+
+    # AppImage define APPIMAGE ao extrair para /tmp
+    appimage = os.environ.get("APPIMAGE")
+    if appimage:
+        return Path(appimage).resolve()
+
     if getattr(sys, "frozen", False):
-        # Executável PyInstaller/AppImage
         return Path(sys.executable).resolve()
     # Modo desenvolvimento — sem auto-update
     return None
