@@ -131,6 +131,19 @@ class YtDlpService:
             name = name.replace(ch, "_")
         return name.strip().strip(".")
 
+    @staticmethod
+    def _cleanup_partial_files(output_path: Path) -> None:
+        """Remove arquivos parciais (.part) deixados pelo yt-dlp ao cancelar."""
+        if not output_path.exists():
+            return
+        for f in output_path.iterdir():
+            if f.is_file() and f.suffix == ".part":
+                try:
+                    f.unlink()
+                    logger.info("Arquivo parcial removido: %s", f.name)
+                except OSError as e:
+                    logger.warning("Falha ao remover %s: %s", f.name, e)
+
     def _resolve_output_path(
         self,
         output_path: Path,
@@ -386,6 +399,7 @@ class YtDlpService:
                 }
         except DownloadCancelledError:
             logger.info(f"Download cancelado: {url}")
+            self._cleanup_partial_files(output_path)
             return {
                 "status": "cancelled",
                 "error": "Cancelado pelo usuário.",
