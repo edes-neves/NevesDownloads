@@ -89,10 +89,16 @@ class DownloadHandler:
     def _cleanup_active_downloads(self):
         """Remove entradas cuja thread já terminou para evitar memory leak."""
         self.active_downloads = [d for d in self.active_downloads if d.get("thread") and d["thread"].is_alive()]
+        if self._download_active and not self.active_downloads:
+            self._set_download_active(False)
 
     # ── Click de download ──────────────────────────────────────
 
     def _on_download_clicked(self):
+        if self._download_active:
+            self._on_pause_clicked()
+            return
+
         raw_text = self._get_url_text()
         if not raw_text:
             messagebox.showerror(_("dialog.url_empty"), _("dialog.url_empty_body"))
@@ -292,6 +298,7 @@ class DownloadHandler:
                 "cancel_event": cancel_event,
             }
         )
+        self._set_download_active(True)
 
     def _start_video_download(self, url, title, card, cancel_event, cookies_browser, mode="video"):
         card.cancel_callback = cancel_event.set
@@ -668,6 +675,7 @@ class DownloadHandler:
                 "pause_event": pause_event,
             }
         )
+        self._set_download_active(True)
 
     # ── Histórico ──────────────────────────────────────────────
 

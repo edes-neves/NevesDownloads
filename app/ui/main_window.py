@@ -110,6 +110,10 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
         # Controle de downloads ativos
         self.active_downloads = []
 
+        # Estado dos botões de download
+        self._download_active = False
+        self._download_paused = False
+
     # ── Menu de contexto ────────────────────────────────────────
 
     def _bind_right_click(self):
@@ -490,6 +494,7 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
         self.btn_frame.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(15, 5))
         self.btn_frame.grid_columnconfigure(0, weight=1)
         self.btn_frame.grid_columnconfigure(1, weight=0)
+        self.btn_frame.grid_columnconfigure(2, weight=0)
 
         self.download_button = ctk.CTkButton(
             self.btn_frame,
@@ -502,6 +507,19 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
         )
         self.download_button.grid(row=0, column=0, sticky="ew", padx=(0, 10))
 
+        self.cancel_download_button = ctk.CTkButton(
+            self.btn_frame,
+            text=_("btn.cancel_download"),
+            height=50,
+            width=180,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            command=self._on_cancel_clicked,
+            fg_color="#b02b2b",
+            hover_color="#7a1f1f",
+            state="disabled",
+        )
+        self.cancel_download_button.grid(row=0, column=1, padx=(0, 10))
+
         self.clear_completed_button = ctk.CTkButton(
             self.btn_frame,
             text=_("btn.clear_completed"),
@@ -509,10 +527,10 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
             width=180,
             font=ctk.CTkFont(size=13, weight="bold"),
             command=self._clear_completed_downloads,
-            fg_color="#b02b2b",
-            hover_color="#7a1f1f",
+            fg_color="#555555",
+            hover_color="#333333",
         )
-        self.clear_completed_button.grid(row=0, column=1)
+        self.clear_completed_button.grid(row=0, column=2)
 
         # ── Área para cartões de download ──
         self.downloads_frame = ctk.CTkScrollableFrame(
@@ -531,6 +549,76 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
         """Configura pesos da grade principal."""
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
+
+    def _update_download_buttons(self):
+        """Atualiza o texto e estado dos botões conforme o estado dos downloads."""
+        if self._download_active and not self._download_paused:
+            self.download_button.configure(
+                text=_("btn.pause_download"),
+                fg_color="#8c6b2b",
+                hover_color="#6b4f1e",
+            )
+            self.cancel_download_button.configure(state="normal")
+        elif self._download_active and self._download_paused:
+            self.download_button.configure(
+                text=_("btn.resume_download"),
+                fg_color="#2b6b8c",
+                hover_color="#1e4f6b",
+            )
+            self.cancel_download_button.configure(state="normal")
+        else:
+            self.download_button.configure(
+                text=_("btn.start_download"),
+                fg_color="#2b8c3e",
+                hover_color="#1e6b30",
+                command=self._on_download_clicked,
+            )
+            self.cancel_download_button.configure(state="disabled")
+
+    def _on_pause_clicked(self):
+        """Alterna entre pausar e retomar todos os downloads."""
+        if self._download_paused:
+            self._resume_all_downloads()
+            self._download_paused = False
+        else:
+            self._pause_all_downloads()
+            self._download_paused = True
+        self._update_download_buttons()
+
+    def _on_cancel_clicked(self):
+        """Cancela todos os downloads ativos."""
+        if not self._download_active:
+            return
+        resposta = messagebox.askyesno(
+            _("dialog.clear_history"),
+            _("btn.cancel_download") + "?",
+            icon="warning",
+        )
+        if not resposta:
+            return
+        self._cleanup_active_downloads()
+        for d in self.active_downloads:
+            cancel_event = d.get("cancel_event")
+            if cancel_event is not None:
+                cancel_event.set()
+            card = d.get("card")
+            if card:
+                card.cancelled = True
+                card.update_progress({"status": "cancelled"})
+        self.active_downloads.clear()
+        self._download_active = False
+        self._download_paused = False
+        self.global_pause_event.clear()
+        self._update_download_buttons()
+        self.logger.info("Todos os downloads cancelados pelo usuario.")
+
+    def _set_download_active(self, active: bool):
+        """Define o estado de downloads ativos e atualiza os botões."""
+        self._download_active = active
+        if not active:
+            self._download_paused = False
+            self.global_pause_event.clear()
+        self._update_download_buttons()
 
     def _on_type_changed(self):
         """Alterna entre opções de vídeo e áudio."""

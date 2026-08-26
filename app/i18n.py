@@ -76,6 +76,9 @@ _PT_BR: dict[str, str] = {
     "organize": "Organizar por canal/artista",
     "audio_format": "Formato do audio:",
     "btn.start_download": "INICIAR DOWNLOAD",
+    "btn.pause_download": "PAUSAR DOWNLOAD",
+    "btn.resume_download": "CONTINUAR DOWNLOAD",
+    "btn.cancel_download": "CANCELAR DOWNLOAD",
     "btn.clear_completed": "LIMPAR CONCLUIDOS",
     "downloads_active": "Downloads ativos",
     # ── Menu de contexto ──
@@ -433,6 +436,9 @@ _EN_US: dict[str, str] = {
     "organize": "Organize by channel/artist",
     "audio_format": "Audio format:",
     "btn.start_download": "START DOWNLOAD",
+    "btn.pause_download": "PAUSE DOWNLOAD",
+    "btn.resume_download": "RESUME DOWNLOAD",
+    "btn.cancel_download": "CANCEL DOWNLOAD",
     "btn.clear_completed": "CLEAR COMPLETED",
     "downloads_active": "Active downloads",
     # ── Context menu ──
