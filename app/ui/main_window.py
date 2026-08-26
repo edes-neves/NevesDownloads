@@ -603,8 +603,11 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
                 cancel_event.set()
             card = d.get("card")
             if card:
-                card.cancelled = True
                 card.update_progress({"status": "cancelled"})
+                card.cancelled = True
+            url = d.get("url")
+            if url:
+                self.queue.mark_error(url)
         self.active_downloads.clear()
         self._download_active = False
         self._download_paused = False

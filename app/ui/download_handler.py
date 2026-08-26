@@ -296,6 +296,7 @@ class DownloadHandler:
                 "thread": thread,
                 "card": card,
                 "cancel_event": cancel_event,
+                "url": url,
             }
         )
         self._set_download_active(True)
@@ -423,6 +424,7 @@ class DownloadHandler:
                 "card": card,
                 "cancel_event": cancel_event,
                 "pause_event": pause_event,
+                "url": url,
             }
         )
         return thread, card, cancel_event, pause_event
@@ -545,6 +547,7 @@ class DownloadHandler:
                     "card": item_card,
                     "cancel_event": item_cancel,
                     "pause_event": pause_event,
+                    "url": url,
                 }
             )
 
