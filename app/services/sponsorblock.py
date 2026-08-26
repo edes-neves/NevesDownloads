@@ -8,25 +8,12 @@ das categorias para exibição na janela de configurações.
 
 import logging
 
+from app.core.sponsorblock import SPONSOR_CATEGORY_LABELS
 from app.i18n import _
 
 logger = logging.getLogger("neves_downloads")
 
-# Categorias padrão que são removidas quando o SponsorBlock está ativo
-DEFAULT_CATEGORIES = ["sponsor", "selfpromo", "interaction", "intro", "outro", "preview"]
-
-_SPONSOR_LABELS = {
-    "sponsor": "sponsor.sponsor",
-    "selfpromo": "sponsor.selfpromo",
-    "interaction": "sponsor.interaction",
-    "intro": "sponsor.intro",
-    "outro": "sponsor.outro",
-    "preview": "sponsor.preview",
-    "music_official": "sponsor.music_official",
-    "filler": "sponsor.filler",
-}
-
 
 def get_categories_labels() -> dict[str, str]:
     """Retorna todas as categorias disponíveis com rótulos traduzidos."""
-    return {k: _(v) for k, v in _SPONSOR_LABELS.items()}
+    return {k: _(v) for k, v in SPONSOR_CATEGORY_LABELS.items()}

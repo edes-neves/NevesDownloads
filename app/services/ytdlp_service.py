@@ -8,13 +8,9 @@ from typing import Any
 
 import yt_dlp
 
+from app.core.exceptions import DownloadCancelledError
+
 logger = logging.getLogger("neves_downloads")
-
-
-class DownloadCancelledError(Exception):
-    """Exceção levantada para interromper um download em andamento."""
-
-    pass
 
 
 def _find_js_runtimes() -> dict[str, Any]:

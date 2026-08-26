@@ -1,6 +1,7 @@
 """Testes unitários para app.services.sponsorblock."""
 
-from app.services.sponsorblock import DEFAULT_CATEGORIES, get_categories_labels
+from app.core.sponsorblock import DEFAULT_CATEGORIES
+from app.services.sponsorblock import get_categories_labels
 
 
 class TestGetCategoriesLabels:

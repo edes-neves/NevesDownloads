@@ -14,6 +14,7 @@ O yt-dlp já suporta TikTok, mas este módulo adiciona:
 import logging
 import re
 
+from app.core.tiktok import TIKTOK_CONTENT_I18N, TIKTOK_QUALITY_MAP
 from app.i18n import _
 
 logger = logging.getLogger("neves_downloads")
@@ -46,26 +47,6 @@ _TIKTOK_PATTERNS = [
         re.IGNORECASE,
     ),
 ]
-
-# Qualidades máximas suportadas pelo TikTok
-_TIKTOK_QUALITY_MAP = {
-    "Melhor disponivel": "best",
-    "Melhor disponível": "best",
-    "4K / 2160p": "best",  # TikTok não vai além de 1080p
-    "2K / 1440p": "best",
-    "Full HD / 1080p": "best[height<=1080]/best",
-    "HD / 720p": "best[height<=720]/best",
-    "480p": "best[height<=480]/best",
-    "360p": "best[height<=360]/best",
-}
-
-# Tipos de conteúdo TikTok (chaves internas -> chaves de i18n)
-_CONTENT_I18N = {
-    "video": "tiktok.video",
-    "photo": "tiktok.photo",
-    "story": "tiktok.story",
-    "unknown": "tiktok.unknown",
-}
 
 
 def is_tiktok_url(url: str) -> bool:
@@ -133,7 +114,7 @@ def get_quality_for_tiktok(quality: str) -> str:
     O TikTok tipicamente fornece no máximo 1080p, então
     opções como 4K são redirecionadas para 'best'.
     """
-    return _TIKTOK_QUALITY_MAP.get(quality, "best")
+    return TIKTOK_QUALITY_MAP.get(quality, "best")
 
 
 def get_content_info(url: str) -> dict[str, str | bool | None]:
@@ -167,7 +148,7 @@ def get_content_info(url: str) -> dict[str, str | bool | None]:
     return {
         "is_tiktok": detected,
         "content_type": content_type,
-        "content_type_label": _(_CONTENT_I18N.get(content_type, "tiktok.unknown")),
+        "content_type_label": _(TIKTOK_CONTENT_I18N.get(content_type, "tiktok.unknown")),
         "video_id": video_id,
         "quality_tip": tips.get(content_type, ""),
         "needs_cookies": needs_cookies,

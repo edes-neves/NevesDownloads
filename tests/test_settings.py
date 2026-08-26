@@ -66,7 +66,7 @@ class TestSettings:
         config = settings.load_all()
         assert isinstance(config, dict)
         # Deve ter todas as chaves dos defaults
-        for key in settings._DEFAULTS:
+        for key in settings.SETTINGS_DEFAULTS:
             assert key in config
 
     def test_valores_validos_para_quality(self):
