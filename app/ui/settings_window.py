@@ -467,5 +467,5 @@ class SettingsWindow(ctk.CTkToplevel):
             except Exception as e:
                 logger.error("Erro ao aplicar configurações: %s", e)
 
-        messagebox.showinfo(_("settings.title"), _("dialog.settings.saved"))
+        messagebox.showinfo(_("settings.title"), _("dialog.settings.saved"), parent=self)
         self.destroy()
