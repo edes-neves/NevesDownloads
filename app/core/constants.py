@@ -1,7 +1,7 @@
 """Constantes globais do domínio da aplicação."""
 
 APP_NAME = "Neves Downloads"
-APP_VERSION = "1.1.2"
+APP_VERSION = "1.1.3"
 # Identificador usado na propriedade WM_CLASS do X11 (sem espaços, em minúsculas)
 # para que o usuário possa agrupar/personalizar a janela no gerenciador de janelas.
 APP_WM_CLASS = "nevesdownloads"

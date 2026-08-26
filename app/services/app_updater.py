@@ -5,10 +5,12 @@ Verifica o repositório GitHub na busca de versões mais recentes,
 baixa o AppImage e substitui o executável atual.
 """
 
+import contextlib
 import json
 import logging
 import shutil
 import stat
+import subprocess
 import sys
 from pathlib import Path
 from urllib.request import Request, urlopen
@@ -196,7 +198,11 @@ def download_release_asset(url: str, dest: Path, progress_callback=None) -> bool
 
 def install_update(asset_path: Path) -> dict:
     """
-    Instala uma atualização substituindo o executável atual.
+    Instala uma atualização.
+
+    Em vez de substituir o executável enquanto está a correr (impossível
+    com AppImage/FUSE), copia o novo para <exe>.pending e cria um helper
+    script que, após o app fechar, faz a troca e limpa.
 
     Retorna:
         {"success": bool, "message": str, "requires_restart": bool}
@@ -210,34 +216,74 @@ def install_update(asset_path: Path) -> dict:
         }
 
     try:
-        # Verifica se o asset é AppImage
-        if asset_path.suffix == ".AppImage" or "AppImage" in asset_path.name:
-            # Torna executável
-            asset_path.chmod(asset_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-
-            # Backup do executável atual
-            backup = exe.with_suffix(".AppImage.bak")
-            if backup.exists():
-                backup.unlink()
-            shutil.move(str(exe), str(backup))
-
-            # Substitui pelo novo
-            shutil.move(str(asset_path), str(exe))
-            exe.chmod(exe.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-
-            msg = _("updater.app_updated").format(version=APP_VERSION)
-            logger.info(msg)
-
+        if not (asset_path.suffix == ".AppImage" or "AppImage" in asset_path.name):
             return {
-                "success": True,
-                "message": msg,
-                "requires_restart": True,
+                "success": False,
+                "message": "Formato de asset não suportado: " + asset_path.name,
+                "requires_restart": False,
             }
 
+        # Torna executável
+        asset_path.chmod(asset_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+        # Copia o novo AppImage para <exe>.pending (ao lado do atual)
+        pending = exe.with_suffix(".AppImage.pending")
+        if pending.exists():
+            pending.unlink()
+        shutil.copy2(str(asset_path), str(pending))
+
+        # Remove o download temporário
+        with contextlib.suppress(OSError):
+            asset_path.unlink()
+
+        # Cria helper script que faz a troca após o app fechar
+        helper = exe.parent / ".update_helper.sh"
+        helper.write_text(
+            f"""#!/bin/bash
+# Auto-update helper — espera o app fechar e substitui o AppImage
+EXE="{exe}"
+PENDING="{pending}"
+BAK="{exe}.bak"
+
+# Espera o app fechar (max 30s)
+for i in $(seq 1 30); do
+    if ! pgrep -f "$EXE" > /dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+done
+
+# Pequena pausa extra para garantir
+sleep 2
+
+# Troca os ficheiros
+if [ -f "$PENDING" ]; then
+    [ -f "$BAK" ] && rm -f "$BAK"
+    mv "$EXE" "$BAK" 2>/dev/null
+    mv "$PENDING" "$EXE"
+    chmod +x "$EXE"
+    rm -f "$0"
+fi
+""",
+            encoding="utf-8",
+        )
+        helper.chmod(0o755)
+
+        # Lança o helper em background (detached) e fecha o app
+        subprocess.Popen(
+            ["/bin/bash", str(helper)],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+        msg = _("updater.app_updated").format(version=APP_VERSION)
+        logger.info(msg)
+
         return {
-            "success": False,
-            "message": "Formato de asset não suportado: " + asset_path.name,
-            "requires_restart": False,
+            "success": True,
+            "message": msg,
+            "requires_restart": True,
         }
 
     except Exception as e:

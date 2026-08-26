@@ -839,6 +839,8 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
                     _("dialog.update.title"),
                     result["message"] + "\n\n" + _("app_updater.restart_required"),
                 )
+                self.logger.info("Encerrando para aplicar atualização.")
+                self.destroy()
             else:
                 messagebox.showinfo(
                     _("dialog.update.title"),
