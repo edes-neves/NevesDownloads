@@ -387,6 +387,8 @@ class DownloadHandler:
                     elif result.get("status") == "cancelled":
                         self.after(0, lambda: card.update_progress({"status": "cancelled"}))
                         self.after(0, card.disable_pause)
+                        if track_queue:
+                            self._mark_error(url)
                     else:
                         self.after(0, lambda: card.update_progress({"status": "error"}))
                         self.after(0, card.disable_pause)
@@ -609,6 +611,7 @@ class DownloadHandler:
                     elif result.get("status") == "cancelled":
                         self.after(0, lambda: item_card.update_progress({"status": "cancelled"}))
                         self.after(0, item_card.disable_pause)
+                        self._mark_error(url)
                     else:
                         self.after(0, lambda: item_card.update_progress({"status": "error"}))
                         self.after(0, item_card.disable_pause)
