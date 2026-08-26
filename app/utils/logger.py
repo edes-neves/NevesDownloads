@@ -1,12 +1,20 @@
 import logging
+import logging.handlers
 import sys
 
 from app.utils.paths import get_logs_dir
 
+# Tamanho máximo de cada arquivo de log (5 MB)
+_MAX_BYTES = 5 * 1024 * 1024
+# Número de arquivos de backup a manter
+_BACKUP_COUNT = 5
+
 
 def setup_logger(name: str = "neves_downloads") -> logging.Logger:
-    """
-    Configura e retorna um logger com saída para console e arquivo.
+    """Configura e retorna um logger com saída para console e arquivo.
+
+    O handler de arquivo usa ``RotatingFileHandler`` para limitar o
+    tamanho de cada arquivo a 5 MB e manter no máximo 5 backups.
     """
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
@@ -26,10 +34,15 @@ def setup_logger(name: str = "neves_downloads") -> logging.Logger:
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-    # Handler para arquivo (logs diários)
+    # Handler para arquivo com rotação por tamanho
     logs_dir = get_logs_dir()
     log_file = logs_dir / "app.log"
-    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler = logging.handlers.RotatingFileHandler(
+        log_file,
+        maxBytes=_MAX_BYTES,
+        backupCount=_BACKUP_COUNT,
+        encoding="utf-8",
+    )
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)

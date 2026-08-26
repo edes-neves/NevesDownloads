@@ -191,6 +191,7 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
 
         # ── Ajuda ──
         help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(label=_("menu.help.update_app"), command=self._check_app_update)
         help_menu.add_command(label=_("menu.help.update_ytdlp"), command=self._check_ytdlp_update)
         help_menu.add_separator()
         help_menu.add_command(
@@ -653,6 +654,109 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
             messagebox.showerror(
                 _("dialog.update.error_title"),
                 _("dialog.update.error_hint").format(message=result["message"]),
+            )
+
+    # ── Auto-atualização do aplicativo (GitHub Releases) ────────
+
+    def _check_app_update(self):
+        """Verifica se há uma nova versão do aplicativo no GitHub."""
+        from app.services.app_updater import check_for_update
+
+        self.logger.info("Verificando atualização do aplicativo...")
+
+        def _check():
+            result = check_for_update()
+            self.after(0, lambda: self._show_app_update_result(result))
+
+        threading.Thread(target=_check, daemon=True).start()
+
+    def _show_app_update_result(self, result: dict | None):
+        """Exibe o resultado da verificação de atualização do app."""
+        if result is None:
+            messagebox.showerror(
+                _("dialog.update.title"),
+                _("app_updater.failed").format(error="Não foi possível conectar ao GitHub."),
+            )
+            return
+
+        if not result["available"]:
+            messagebox.showinfo(
+                _("dialog.update.title"),
+                _("app_updater.up_to_date").format(version=result["current"]),
+            )
+            return
+
+        resposta = messagebox.askyesno(
+            _("dialog.update.title"),
+            _("app_updater.ask_update").format(version=result["latest"]),
+            icon="question",
+        )
+        if resposta:
+            self._run_app_update(result["release"])
+
+    def _run_app_update(self, release: dict):
+        """Baixa e instala a atualização do aplicativo."""
+        from app.services.app_updater import download_release_asset, install_update
+
+        # Encontra o AppImage nos assets
+        appimage_asset = None
+        for asset in release.get("assets", []):
+            if asset["name"].endswith(".AppImage"):
+                appimage_asset = asset
+                break
+
+        if not appimage_asset:
+            messagebox.showerror(
+                _("dialog.update.title"),
+                _("app_updater.no_asset"),
+            )
+            return
+
+        self.logger.info("Baixando atualização: %s", appimage_asset["name"])
+
+        def _download():
+            import tempfile
+            from pathlib import Path
+
+            dest = Path(tempfile.gettempdir()) / appimage_asset["name"]
+
+            success = download_release_asset(
+                appimage_asset["browser_download_url"],
+                dest,
+            )
+
+            if not success:
+                self.after(
+                    0,
+                    lambda: messagebox.showerror(
+                        _("dialog.update.title"),
+                        _("app_updater.failed").format(error="Falha no download."),
+                    ),
+                )
+                return
+
+            result = install_update(dest)
+            self.after(0, lambda: self._show_install_result(result))
+
+        threading.Thread(target=_download, daemon=True).start()
+
+    def _show_install_result(self, result: dict):
+        """Exibe o resultado da instalação da atualização."""
+        if result["success"]:
+            if result.get("requires_restart"):
+                messagebox.showinfo(
+                    _("dialog.update.title"),
+                    result["message"] + "\n\n" + _("app_updater.restart_required"),
+                )
+            else:
+                messagebox.showinfo(
+                    _("dialog.update.title"),
+                    result["message"],
+                )
+        else:
+            messagebox.showerror(
+                _("dialog.update.title"),
+                result["message"],
             )
 
     # ── Fechamento ──────────────────────────────────────────────

@@ -71,7 +71,7 @@ class TestTranslation:
     def test_pt_br_menu(self):
         set_language("pt-BR")
         assert _("menu.file") == "Arquivo"
-        assert _("menu.settings") == "Configuracoes"
+        assert _("menu.settings") == "Configurações"
         assert _("menu.download") == "Download"
         assert _("menu.edit") == "Editar"
         assert _("menu.view") == "Exibir"

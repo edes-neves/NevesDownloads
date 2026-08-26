@@ -1,6 +1,6 @@
 # Neves Downloads
 
-Gerenciador de downloads de vídeos e áudios com interface moderna e suporte a playlists.
+Gerenciador de downloads de vídeos e áudios com interface moderna, suporte a playlists e internacionalização (pt-BR / en-US).
 
 ## Funcionalidades
 
@@ -17,73 +17,136 @@ Gerenciador de downloads de vídeos e áudios com interface moderna e suporte a 
 - Embutir thumbnail nos arquivos de áudio
 - Organização automática por canal/uploader
 - Template personalizado de nomes de arquivo com variáveis (`%(title)s`, `%(ext)s`, `%(uploader)s`, etc.)
-- Suporte a cookies de navegador (Chrome, Firefox, Edge, Opera, Brave, Vivaldi, Safari)
+- Suporte a cookies de navegador (Chrome, Firefox, Edge, Opera, Vivaldi)
+- Otimizações específicas para TikTok (remoção de marca d'água, detecção de tipo de conteúdo)
+- Integração com SponsorBlock para remoção automática de segmentos indesejados
 
 ### Interface
 - Interface moderna com CustomTkinter (temas dark/light/sistema)
-- **Layout limpo e focado no essencial**: URL, tipo (Vídeo/Áudio), qualidade e modo
-- Opções avançadas (cookies, formatos de vídeo, legendas, organização) nas **Configurações**
-- Janela principal com URL multi-linha para colar várias URLs
+- Layout limpo e focado no essencial: URL, tipo, qualidade e modo
+- Opções avançadas nas Configurações (cookies, formatos, legendas, organização)
 - Cartões de progresso com velocidade, tamanho, ETA e barra de progresso
-- Botão de cancelar download individual
-- Botão de pausar/retomar download individual
+- Pausar/Retomar download individual e em lote
 - Menu completo: Arquivo, Download, Configurações, Editar, Exibir, Histórico, Ajuda
-- Menu de contexto (botão direito) na caixa de URL (Colar, Limpar)
 - Navegador de pastas customizado para seleção de destino
 - Janela de seleção de vídeos de playlist com checkboxes
-- Janela de configurações organizada por seções
-- Janela "Sobre" com informações do projeto e licença
 - Atalho Ctrl+V para colar URLs
+
+### Internacionalização (i18n)
+- Suporte a pt-BR e en-US, configurável nas Configurações
+- ~195 chaves traduzidas em todos os módulos UI e serviços
+- Troca de idioma em tempo real (reinicialização da janela)
+- Labels internos mantidos em pt-BR para compatibilidade de configurações
 
 ### Configurações
 - 25 configurações persistentes organizadas em seções:
-  - **Aparência e Idioma**: Tema (sistema/claro/escuro), idioma (pt-BR/en-US)
-  - **Padrões de Download**: Tipo (vídeo/áudio), modo, qualidade, formato, cookies, organizar por canal, legendas
-  - **Rede e Desempenho**: Downloads simultâneos, proxy (HTTP/HTTPS/SOCKS4/SOCKS5), limite de velocidade, retries, timeout
+  - **Aparência e Idioma**: Tema, idioma (pt-BR/en-US)
+  - **Padrões de Download**: Tipo, modo, qualidade, formato, cookies, organizar, legendas
+  - **Rede e Desempenho**: Downloads simultâneos, proxy, limite de velocidade, retries, timeout
+  - **SponsorBlock**: Ativar remoção, categorias configuráveis
+  - **TikTok**: Remoção de marca d'água
   - **Nomeação de Arquivos**: Template com variáveis documentadas
-  - **Thumbnails**: Embutir thumbnail, salvar thumbnail separado
-  - **Comportamento**: Confirmação ao sair com downloads ativos, auto-limpar concluídos
+  - **Thumbnails**: Embutir, salvar separado
+  - **Comportamento**: Confirmação ao sair, auto-limpar concluídos
 - Reset para configurações padrão
 - Pré-visualização de tema em tempo real
 
 ### Gestão de Downloads
 - Fila de downloads com limite de concorrência configurável
-- **Pausar/Retomar downloads individualmente** (botão no cartão de progresso)
-- **Pausar/Retomar todos** os downloads (menu "Download" e bandeja)
-- **Fila persistente**: downloads pendentes são salvos e retomados no próximo início
-- Continuar downloads em segundo plano ao fechar a janela
-- Confirmação ao sair com downloads ativos
-- Limpeza automática ou manual de downloads concluídos
-- Botão "Limpar concluídos"
+- Pausar/Retomar individual e em lote
+- Fila persistente: pendentes são salvos e retomados no próximo início
+- Continuar em segundo plano ao fechar a janela
+- Limpeza automática ou manual de concluídos
 
-### Bandeja do sistema (tray icon)
+### Bandeja do sistema
 - Ícone na bandeja de notificação (via `pystray`)
-- Mostrar/Ocultar janela, Pausar/Retomar todos e Sair
-- Ao "continuar em segundo plano", a janela é ocultada mas os downloads seguem ativos na bandeja
+- Mostrar/Ocultar, Pausar/Retomar todos, Sair
 
 ### Mensagens de erro amigáveis
-- Mapeamento automático de erros do `yt-dlp` para mensagens claras em português
-  (vídeo privado/indisponível, restrição regional/idade, login, FFmpeg, rede, limite de requisições, etc.)
+- Mapeamento automático de erros do yt-dlp para mensagens claras
 - Dica de ação sugerida em cada erro
 
 ### Histórico
-- Histórico persistente de downloads (até 500 entradas)
+- Histórico persistente (até 500 entradas)
 - Exibição formatada: status, tipo, título, uploader, data
-- Limpeza do histórico com confirmação
+
+### Auto-update
+- Verificação automática de atualizações via GitHub Releases
+- Download e instalação de novas versões AppImage
+- Notificação ao usuário com opção de atualizar
 
 ### Sistema
-- Logging em arquivo e console (`~/.neves_downloads/logs/app.log`)
+- Logging com rotação (5 MB, 5 backups) em `~/.neves_downloads/logs/app.log`
 - Detecção automática de FFmpeg
-- Detecção de runtimes JavaScript (Deno, Node.js) para yt-dlp
-- Compatibilidade com desktops Linux (WM_CLASS `nevesdownloads` definido nativamente via Tk, com reforço via xprop)
+- Compatível com desktops Linux (WM_CLASS `nevesdownloads`)
 - Suporte a proxy com validação de formato
+
+## Estrutura do Projeto
+
+```
+NevesDownloads/
+├── main.py                          # Ponto de entrada
+├── app/
+│   ├── __init__.py                  # Exporta init_language, set_language, _
+│   ├── constants.py                 # Re-export de core/constants.py (compatibilidade)
+│   ├── i18n.py                      # Internacionalização (~195 chaves, pt-BR/en-US)
+│   ├── core/                        # Domínio da aplicação
+│   │   ├── constants.py             # APP_NAME, APP_VERSION, QUALITY_OPTIONS, etc.
+│   │   ├── enums.py                 # DownloadStatus, QueueItemStatus, etc. (StrEnum)
+│   │   ├── error_patterns.py        # Registry de padrões de erro do yt-dlp
+│   │   ├── exceptions.py            # DownloadCancelledError
+│   │   ├── settings_schema.py       # SETTINGS_DEFAULTS, validação, tipos
+│   │   ├── sponsorblock.py          # DEFAULT_CATEGORIES, SPONSOR_CATEGORY_LABELS
+│   │   └── tiktok.py               # TIKTOK_QUALITY_MAP, TIKTOK_CONTENT_I18N
+│   ├── models/                      # Dataclasses de dados
+│   │   ├── history_entry.py         # HistoryEntry
+│   │   ├── queue_item.py            # QueueItem
+│   │   ├── download_result.py       # DownloadResult
+│   │   ├── error_info.py            # ErrorInfo
+│   │   └── tiktok_content_info.py   # TikTokContentInfo
+│   ├── services/                    # Lógica de negócio
+│   │   ├── settings.py              # Configurações persistentes (JSON)
+│   │   ├── history.py               # Histórico de downloads
+│   │   ├── queue.py                 # Fila persistente de downloads
+│   │   ├── errors.py                # Erros amigáveis (importa core/error_patterns)
+│   │   ├── ytdlp_service.py         # Serviço de download via yt-dlp
+│   │   ├── updater.py               # Atualização do yt-dlp
+│   │   ├── app_updater.py           # Auto-update do app via GitHub Releases
+│   │   ├── sponsorblock.py          # Labels de categorias SponsorBlock
+│   │   ├── tiktok.py                # Suporte dedicado a TikTok
+│   │   ├── tray_manager.py          # Bandeja do sistema (pystray)
+│   │   └── clipboard_monitor.py     # Monitor de área de transferência
+│   ├── ui/                          # Interface gráfica
+│   │   ├── main_window.py           # Janela principal
+│   │   ├── download_card.py         # Cartão de progresso
+│   │   ├── download_handler.py      # Orquestração de downloads
+│   │   ├── settings_window.py       # Janela de configurações
+│   │   ├── playlist_window.py       # Seleção de playlists
+│   │   ├── folder_browser.py        # Navegador de pastas
+│   │   ├── clipboard_handler.py     # Handler de clipboard
+│   │   └── tray_handler.py          # Handler da bandeja
+│   └── utils/                       # Infraestrutura
+│       ├── logger.py                # Logging com rotação (RotatingFileHandler)
+│       ├── paths.py                 # Diretórios da aplicação
+│       ├── resources.py             # Resolução de assets
+│       └── validators.py            # Validação de URLs
+├── tests/                           # 339 testes
+│   ├── test_i18n.py                 # Testes do módulo i18n
+│   ├── test_i18n_smoke.py           # Smoke tests de tradução
+│   └── ...                          # Testes unitários e de integração
+├── packaging/                       # Scripts de empacotamento
+├── assets/                          # Ícone do aplicativo
+├── pyproject.toml                   # Configuração do projeto
+├── requirements.txt                 # Dependências
+├── requirements-dev.txt             # Dependências de desenvolvimento
+└── LICENSE                          # Licença MIT
+```
 
 ## Requisitos
 
 - Python 3.11+
 - FFmpeg (recomendado para conversão de formatos, legendas e thumbnails)
-- Deno ou Node.js (opcional, para plugins de extensão de yt-dlp)
-- pystray (opcional, para a bandeja do sistema; degrada graciosamente se ausente)
+- pystray (opcional, para a bandeja do sistema)
 
 ## Instalação
 
@@ -97,102 +160,63 @@ pip install -r requirements.txt
 python main.py
 ```
 
-## Empacotamento / Build (PyInstaller)
-
-O projeto empacota em executáveis standalone com PyInstaller. Os scripts se encontram
-em `packaging/`.
-
-### Dependências de build
+## Testes
 
 ```bash
-pip install -r requirements-build.txt   # inclui PyInstaller
+./venv/bin/python -m pytest tests/ -x -q
 ```
 
-### Linux — binário e AppImage
+## Empacotamento (PyInstaller)
 
-`packaging/build_linux.sh` gera um executável único (onefile) e, opcionalmente, um
-**AppImage** portátil:
+### Linux — AppImage
 
 ```bash
-# binário único (sem AppImage)
-./packaging/build_linux.sh
-
-# gera também o AppImage (baixa o appimagetool automaticamente)
 ./packaging/build_linux.sh --appimage
-
-# modo pasta (onedir) em vez de arquivo único
-./packaging/build_linux.sh --onedir
 ```
 
-Artefatos em `dist/`:
-- `NevesDownloads` — executável ELF
-- `NevesDownloads-<versão>.AppImage` — AppImage portátil (com `--appimage`)
-
-### Windows — executável .exe
-
-`packaging/build_windows.bat` gera `dist\NevesDownloads.exe` (onefile) e um
-`.zip` opcional para distribuição:
+### Windows
 
 ```bat
 packaging\build_windows.bat
 ```
 
-### macOS — aplicativo .app
-
-`packaging/build_macos.sh` gera um aplicativo `dist/NevesDownloads.app` e, se o
-`create-dmg` estiver instalado, também um instalador `.dmg`:
+### macOS
 
 ```bash
-./packaging/build_macos.sh          # gera .app
-./packaging/build_macos.sh --dmg    # gera também .dmg (precisa de create-dmg)
+./packaging/build_macos.sh --dmg
 ```
 
-> **Nota:** a extração do ícone no executável é suportada nativamente apenas no
-> Windows (`.exe`) e macOS (`.app`). No Linux o ícone é aplicado ao AppImage via
-> o arquivo `.desktop`/`.png` no `AppDir`.
+## Auto-update
 
-## Estrutura do Projeto
+O app verifica automaticamente novas versões via GitHub Releases.
+Ao detectar uma nova versão, o usuário é notificado e pode baixar
+o AppImage atualizado diretamente pela interface.
 
+Para publicar uma nova versão:
+
+1. Atualize `APP_VERSION` em `app/core/constants.py`
+2. Crie uma tag Git: `git tag v1.0.0`
+3. Push com tag: `git push origin main --tags`
+4. O GitHub Actions criará automaticamente a Release com o AppImage
+
+## Desenvolvimento
+
+### Lint e formatação
+
+```bash
+./venv/bin/python -m ruff check app/ tests/
+./venv/bin/python -m ruff format app/ tests/
 ```
-NevesDownloads/
-├── main.py                          # Ponto de entrada
-├── app/
-│   ├── constants.py                 # Constantes (nome, versão, dev, contato)
-│   ├── core/                        # (reservado para lógica de negócio)
-│   ├── models/                      # (reservado para modelos de dados)
-│   ├── services/
-│   │   ├── settings.py              # Sistema de configurações (25 configs, JSON)
-│   │   ├── history.py               # Histórico de downloads (JSON, 500 max)
-│   │   ├── queue.py                 # Fila persistente de downloads (JSON)
-│   │   ├── errors.py                # Mapeamento de erros em mensagens amigáveis
-│   │   ├── tray_manager.py          # Bandeja do sistema (pystray)
-│   │   └── ytdlp_service.py         # Serviço de download via yt-dlp
-│   ├── utils/
-│   │   ├── logger.py                # Configuração de logging
-│   │   ├── paths.py                 # Gerenciamento de diretórios
-│   │   ├── resources.py             # Resolução de assets (dev e empacotado)
-│   │   └── validators.py            # Validação de URLs
-│   └── ui/
-│       ├── main_window.py           # Janela principal
-│       ├── download_card.py         # Cartão de progresso de download
-│       ├── folder_browser.py        # Navegador de pastas customizado
-│       ├── playlist_window.py       # Janela de seleção de playlists
-│       └── settings_window.py       # Janela de configurações
-├── assets/
-│   └── Icone.png                    # Ícone do aplicativo
-├── packaging/                       # Scripts/arquivos de empacotamento
-│   ├── NevesDownloads.spec          # Especificação do PyInstaller
-│   ├── build_linux.sh               # Build Linux (binário + AppImage)
-│   ├── build_windows.bat            # Build Windows (.exe)
-│   ├── build_macos.sh               # Build macOS (.app / .dmg)
-│   └── requirements-build.txt       # Dependências de build (PyInstaller)
-├── data/logs/                       # Diretório de logs
-├── requirements.txt                 # Dependências
-└── LICENSE                          # Licença MIT
+
+### Pré-commit hooks
+
+```bash
+pre-commit install
 ```
 
 ## Dados do Desenvolvedor
 
 - **Nome**: José Edes Neves
 - **Contato**: edes.neves7@gmail.com
+- **GitHub**: https://github.com/edes-neves
 - **Licença**: MIT

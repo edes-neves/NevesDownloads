@@ -32,7 +32,7 @@ _PT_BR: dict[str, str] = {
     "menu.file.paste_url": "Colar URL",
     "menu.file.exit": "Sair",
     # ── Menu Configurações ──
-    "menu.settings": "Configuracoes",
+    "menu.settings": "Configurações",
     "menu.settings.title": "Configurações...",
     "menu.settings.folder": "Pasta de destino...",
     # ── Menu Download ──
@@ -59,6 +59,7 @@ _PT_BR: dict[str, str] = {
     # ── Menu Ajuda ──
     "menu.help": "Ajuda",
     "menu.help.update_ytdlp": "Verificar atualizacao do yt-dlp...",
+    "menu.help.update_app": "Verificar atualização do aplicativo...",
     "menu.help.get_help": "Obter ajuda",
     "menu.help.report_issues": "Relatar problemas...",
     "menu.help.share_ideas": "Compartilhar ideias...",
@@ -361,6 +362,17 @@ _PT_BR: dict[str, str] = {
     "updater.failed": "Falha ao atualizar yt-dlp: {error}",
     "updater.timeout": "Tempo esgotado ao tentar atualizar yt-dlp (120s).",
     "updater.unexpected_error": "Erro inesperado ao atualizar yt-dlp: {error}",
+    # ── App updater (GitHub Releases) ──
+    "app_updater.checking": "Verificando atualizações...",
+    "app_updater.available": "Nova versão disponível: {latest} (atual: {current})",
+    "app_updater.up_to_date": "Você está na versão mais recente ({version}).",
+    "app_updater.downloading": "Baixando nova versão...",
+    "app_updater.downloaded": "Download concluído. Instalando...",
+    "app_updater.installed": "Atualização instalada com sucesso!",
+    "app_updater.restart_required": "É necessário reiniciar o aplicativo para usar a nova versão.",
+    "app_updater.failed": "Falha ao verificar/atualizar o aplicativo: {error}",
+    "app_updater.no_asset": "Nenhum binário compatível encontrado na release.",
+    "app_updater.ask_update": "Deseja baixar e instalar a versão {version}?",
     # ── Labels de opções (para exibição na UI) ──
     "quality.best": "Melhor disponivel",
     "format.best": "Melhor formato disponivel",
@@ -404,6 +416,7 @@ _EN_US: dict[str, str] = {
     # ── Help menu ──
     "menu.help": "Help",
     "menu.help.update_ytdlp": "Check yt-dlp update...",
+    "menu.help.update_app": "Check application update...",
     "menu.help.get_help": "Get help",
     "menu.help.report_issues": "Report issues...",
     "menu.help.share_ideas": "Share ideas...",
@@ -700,6 +713,17 @@ _EN_US: dict[str, str] = {
     "updater.failed": "Failed to update yt-dlp: {error}",
     "updater.timeout": "Timeout while trying to update yt-dlp (120s).",
     "updater.unexpected_error": "Unexpected error updating yt-dlp: {error}",
+    # ── App updater (GitHub Releases) ──
+    "app_updater.checking": "Checking for updates...",
+    "app_updater.available": "New version available: {latest} (current: {current})",
+    "app_updater.up_to_date": "You are on the latest version ({version}).",
+    "app_updater.downloading": "Downloading new version...",
+    "app_updater.downloaded": "Download complete. Installing...",
+    "app_updater.installed": "Update installed successfully!",
+    "app_updater.restart_required": "Please restart the application to use the new version.",
+    "app_updater.failed": "Failed to check/update the application: {error}",
+    "app_updater.no_asset": "No compatible binary found in the release.",
+    "app_updater.ask_update": "Do you want to download and install version {version}?",
     # ── Option display labels ──
     "quality.best": "Best available",
     "format.best": "Best available format",
