@@ -2,6 +2,7 @@ import logging
 import os
 import shutil
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,30 @@ def _find_js_runtimes() -> dict[str, Any]:
     if node_path:
         runtimes["node"] = {"path": node_path}
     return runtimes
+
+
+def _get_impersonate_target():
+    """
+    Retorna um alvo de impersonação de navegador suportado pelo yt-dlp
+    (exige o pacote curl_cffi). None se indisponível.
+    """
+    try:
+        from yt_dlp.networking._curlcffi import CurlCFFIRH
+    except Exception:
+        return None
+    for target in getattr(CurlCFFIRH, "supported_targets", None) or ():
+        if getattr(target, "client", None) == "chrome":
+            return target
+    return None
+
+
+_IMPERSONATE_TARGET = _get_impersonate_target()
+
+
+def _needs_impersonation(url: str) -> bool:
+    """Facebook bloqueia a extração sem fingerprint de navegador; exige impersonação."""
+    host = (url or "").lower()
+    return "facebook.com" in host or "fbcdn.net" in host
 
 
 class YtDlpService:
@@ -72,6 +97,7 @@ class YtDlpService:
         proxy: str | None = None,
         retries: int | None = None,
         socket_timeout: int | None = None,
+        url: str | None = None,
     ) -> dict[str, Any]:
         """Retorna opções base compartilhadas, adicionando cookies/proxy se fornecido."""
         opts = dict(self._base_opts)
@@ -84,6 +110,9 @@ class YtDlpService:
             opts["proxy"] = proxy
         if cookies_browser:
             opts["cookiesfrombrowser"] = (cookies_browser,)
+        # Facebook exige fingerprint de navegador; usa impersonação se disponível
+        if url and _needs_impersonation(url) and _IMPERSONATE_TARGET is not None:
+            opts["impersonate"] = _IMPERSONATE_TARGET
         return opts
 
     def extract_info(
@@ -92,7 +121,7 @@ class YtDlpService:
         cookies_browser: str | None = None,
     ) -> dict[str, Any] | None:
         try:
-            opts = self._build_base_opts(cookies_browser)
+            opts = self._build_base_opts(cookies_browser, url=url)
             opts["extract_flat"] = False
             opts["noplaylist"] = True
             with yt_dlp.YoutubeDL(opts) as ydl:
@@ -106,15 +135,18 @@ class YtDlpService:
         self,
         url: str,
         cookies_browser: str | None = None,
+        playlistend: int | None = None,
     ) -> dict[str, Any] | None:
         """
         Extrai informações da playlist usando extract_flat=True.
         Retorna apenas metadados básicos (título, URL, duração) sem
         resolver cada vídeo individualmente, o que é muito mais rápido.
         """
-        opts = self._build_base_opts(cookies_browser)
+        opts = self._build_base_opts(cookies_browser, url=url)
         opts["extract_flat"] = True
         opts["ignoreerrors"] = True
+        if playlistend:
+            opts["playlistend"] = playlistend
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info: dict[str, Any] | None = ydl.extract_info(url, download=False)
@@ -195,7 +227,6 @@ class YtDlpService:
             # trilhas DASH separadas falham com "Requested format is not
             # available".
             "Melhor disponivel": "bestvideo*+bestaudio/best",
-            "Melhor disponível": "bestvideo*+bestaudio/best",
             "4K / 2160p": "bestvideo*[height<=2160]+bestaudio/best[height<=2160]/best",
             "2K / 1440p": "bestvideo*[height<=1440]+bestaudio/best[height<=1440]/best",
             "Full HD / 1080p": "bestvideo*[height<=1080]+bestaudio/best[height<=1080]/best",
@@ -203,16 +234,14 @@ class YtDlpService:
             "480p": "bestvideo*[height<=480]+bestaudio/best[height<=480]/best",
             "360p": "bestvideo*[height<=360]+bestaudio/best[height<=360]/best",
         }
-        format_selector = quality_map.get(quality)
-        if not format_selector:
-            format_selector = "bestvideo*+bestaudio/best"
+        format_selector = quality_map.get(quality) or quality_map.get("Melhor disponivel")
 
         ext_map = {
             "MP4": "mp4",
             "WebM": "webm",
             "Melhor formato disponível": "mp4",
         }
-        ext = ext_map.get(fmt, "mp4")
+        ext = ext_map.get(fmt) or ext_map.get("Melhor formato disponivel", "mp4")
 
         # Se for WebM, forçar formato WebM (vídeo e áudio em webm)
         if fmt == "WebM":
@@ -223,6 +252,7 @@ class YtDlpService:
             proxy=proxy,
             retries=retries,
             socket_timeout=socket_timeout,
+            url=url,
         )
 
         # Template de nome de arquivo
@@ -356,8 +386,9 @@ class YtDlpService:
                 while pause_event.is_set():
                     if cancel_event is not None and cancel_event.is_set():
                         raise DownloadCancelledError("Download cancelado durante pausa")
-                    # Pequeno sleep para não travar a CPU nem o progresso
-                    threading.Event().wait(0.3)
+                    # Sleep real: sem travamento de CPU (Event.wait volta imediato
+                    # quando o evento já está setado, gerando busy-wait)
+                    time.sleep(0.3)
 
             hooks.append(_pause_hook)
 
@@ -411,6 +442,9 @@ class YtDlpService:
                 "error": str(e),
             }
 
+    # ── Playlist (múltiplos vídeos) ─────────────────────────────
+    # O download é sequencial; cada vídeo passa pelo mesmo fluxo da
+    # download_video (formato, legendas, thumbnail, cancelamento/pausa).
     def download_playlist(
         self,
         urls: list[str],
@@ -454,7 +488,9 @@ class YtDlpService:
                 while pause_event.is_set():
                     if cancel_event and cancel_event.is_set():
                         break
-                    threading.Event().wait(0.3)
+                    time.sleep(0.3)
+            if cancel_event and cancel_event.is_set():
+                break
 
             # Notifica progresso geral
             if progress_callback:

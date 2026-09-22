@@ -21,14 +21,9 @@ logger = logging.getLogger("neves_downloads")
 
 # Padrões de URLs do TikTok
 _TIKTOK_PATTERNS = [
-    # Vídeo padrão
+    # Vídeo padrão (também casa URLs com query params)
     re.compile(
         r"https?://(?:www\.)?tiktok\.com/@[\w.-]+/video/(\d+)",
-        re.IGNORECASE,
-    ),
-    # Vídeo com query params
-    re.compile(
-        r"https?://(?:www\.)?tiktok\.com/@[\w.-]+/video/(\d+)\?.*",
         re.IGNORECASE,
     ),
     # TikTok shorts (encurtador)
@@ -90,21 +85,21 @@ def detect_content_type(url: str) -> str:
 
 def normalize_url(url: str) -> str:
     """
-    Normaliza URLs do TikTok para melhor compatibilidade com yt-dlp.
+    Normaliza URLs do TikTok para melhor compatibilidade com o yt-dlp.
 
-    Remove parâmetros de rastreamento desnecessários e garante
-    que a URL esteja em formato aceito.
+    Remove a barra final e, apenas para URLs com ID de vídeo/foto/story
+    no caminho, remove os parâmetros de rastreamento (o yt-dlp resolve a
+    URL base). Links curtos ou URLs incomuns são mantidos intactos.
     """
     if not url:
         return url
 
-    # Remove query params exceto os essenciais
-    if "?" in url:
-        base = url.split("?")[0]
-        # mantém a URL base (o yt-dlp resolve)
-        return base.rstrip("/")
-
-    return url.rstrip("/")
+    stripped = url.rstrip("/")
+    if "?" in stripped:
+        base = stripped.split("?")[0]
+        if any(seg in base for seg in ("/video/", "/photo/", "/story/")):
+            return base.rstrip("/")
+    return stripped
 
 
 def get_quality_for_tiktok(quality: str) -> str:

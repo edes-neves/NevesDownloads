@@ -304,6 +304,7 @@ _PT_BR: dict[str, str] = {
     "dialog.clear_history": "Limpar Historico",
     "dialog.clear_history_body": "Tem certeza que deseja apagar todo o historico?",
     "dialog.history_cleared": "Historico limpo com sucesso.",
+    "dialog.cancel.title": "Cancelar Downloads",
     # ── Erros (friendly_error) ──
     "error.video_privado": "Este vídeo é privado. Você precisa de login ou o link não é público.",
     "error.video_privado_dica": "Tente novamente com cookies de navegador configurados nas Configurações.",
@@ -660,6 +661,7 @@ _EN_US: dict[str, str] = {
     "dialog.clear_history": "Clear History",
     "dialog.clear_history_body": "Are you sure you want to delete all history?",
     "dialog.history_cleared": "History cleared successfully.",
+    "dialog.cancel.title": "Cancel Downloads",
     # ── Errors (friendly_error) ──
     "error.video_privado": "This video is private. You need to login or the link is not public.",
     "error.video_privado_dica": "Try again with browser cookies configured in Settings.",

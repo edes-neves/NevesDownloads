@@ -13,6 +13,9 @@ from app.i18n import _
 
 logger = logging.getLogger("neves_downloads")
 
+# Padrões pré-normalizados (minúsculos) — um único cálculo na importação
+_LOOKUP_PATTERNS = [{**padrao, "padroes": [p.lower() for p in padrao["padroes"]]} for padrao in ERROR_PATTERNS]
+
 
 def friendly_error(error: Exception) -> dict:
     """
@@ -30,12 +33,12 @@ def friendly_error(error: Exception) -> dict:
     msg = str(error)
     lowered = msg.lower()
 
-    for padrao in ERROR_PATTERNS:
+    for padrao in _LOOKUP_PATTERNS:
         for p in padrao["padroes"]:
-            if p.lower() in lowered:
+            if p in lowered:
                 return {
-                    "amigavel": _(str(padrao["msg_key"])),
-                    "dica": _(str(padrao["dica_key"])),
+                    "amigavel": _(padrao["msg_key"]),
+                    "dica": _(padrao["dica_key"]),
                     "icone": padrao["icone"],
                     "tecnico": msg,
                     "nome": padrao["nome"],

@@ -24,7 +24,6 @@ SETTINGS_DEFAULTS: dict = {
     "proxy": "",  # ex: socks5://127.0.0.1:1080
     "limit_speed": 0,  # bytes/segundo (0 = ilimitado)
     "retries": 3,
-    "fragment_retries": 3,
     "socket_timeout": 30,
     # ── SponsorBlock ──
     "sponsorblock_enabled": False,  # ativar remoção de segmentos via SponsorBlock
@@ -38,7 +37,6 @@ SETTINGS_DEFAULTS: dict = {
     # ── Comportamento ──
     "confirm_on_exit_with_active_downloads": True,
     "auto_clear_completed": False,
-    "show_context_menu": True,
 }
 
 # Valores aceitáveis para campos que são seleções
@@ -77,7 +75,6 @@ SETTINGS_TYPE_BOOL: set = {
     "write_thumbnail",
     "confirm_on_exit_with_active_downloads",
     "auto_clear_completed",
-    "show_context_menu",
     "sponsorblock_enabled",
     "tiktok_watermark_removal",
 }
@@ -87,6 +84,5 @@ SETTINGS_TYPE_INT: set = {
     "concurrent_fragments",
     "limit_speed",
     "retries",
-    "fragment_retries",
     "socket_timeout",
 }

@@ -3,7 +3,6 @@
 # Qualidades máximas suportadas pelo TikTok
 TIKTOK_QUALITY_MAP: dict[str, str] = {
     "Melhor disponivel": "best",
-    "Melhor disponível": "best",
     "4K / 2160p": "best",  # TikTok não vai além de 1080p
     "2K / 1440p": "best",
     "Full HD / 1080p": "best[height<=1080]/best",

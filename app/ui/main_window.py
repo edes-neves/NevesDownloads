@@ -73,6 +73,7 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
         self.tiktok_watermark_removal = bool(settings.load("tiktok_watermark_removal"))
         # Semáforo para limitar downloads simultâneos
         self.semaphore = threading.Semaphore(self.max_concurrent)
+        self._old_max_concurrent = self.max_concurrent
 
         # Logger e serviço
         self.logger = setup_logger()
@@ -590,7 +591,7 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
         if not self._download_active:
             return
         resposta = messagebox.askyesno(
-            _("dialog.clear_history"),
+            _("dialog.cancel.title"),
             _("btn.cancel_download") + "?",
             icon="warning",
         )
@@ -665,6 +666,9 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
         self.subtitles_var.set(bool(settings.load("default_subtitles_enabled")))
 
         self.max_concurrent = int(settings.load("max_concurrent_downloads"))
+        if self.max_concurrent != self._old_max_concurrent:
+            self.semaphore = threading.Semaphore(self.max_concurrent)
+            self._old_max_concurrent = self.max_concurrent
         self.limit_speed = int(settings.load("limit_speed"))
         self.retries = int(settings.load("retries"))
         self.socket_timeout = int(settings.load("socket_timeout"))
@@ -679,9 +683,30 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
         self.concurrent_fragments = int(settings.load("concurrent_fragments"))
         self.tiktok_watermark_removal = bool(settings.load("tiktok_watermark_removal"))
 
-        # Atualiza idioma
+        # Atualiza idioma e reaplica os textos na interface
         set_language(settings.load("default_language") or "pt-BR")
+        self._refresh_ui_texts()
 
+    def _refresh_ui_texts(self):
+        """Reaplica os textos traduzidos aos widgets existentes (após mudar idioma)."""
+        self.title(_("window.title").format(name=APP_NAME, version=APP_VERSION))
+        self._create_menu_bar()
+        self.title_label.configure(text=APP_NAME)
+        self.sub_label.configure(text=_("subtitle"))
+        self.url_label.configure(text=_("url_label"))
+        self.radio_video_type.configure(text=_("type.video"))
+        self.radio_audio_type.configure(text=_("type.audio"))
+        self.quality_label.configure(text=_("quality.label"))
+        self.organize_check.configure(text=_("organize"))
+        self.audio_fmt_label.configure(text=_("audio_format"))
+        self.radio_video.configure(text=_("mode.video"))
+        self.radio_playlist_all.configure(text=_("mode.playlist_all"))
+        self.radio_playlist_select.configure(text=_("mode.playlist_select"))
+        self.subtitles_check.configure(text=_("subtitles"))
+        self.cancel_download_button.configure(text=_("btn.cancel_download"))
+        self.clear_completed_button.configure(text=_("btn.clear_completed"))
+        self.downloads_frame.configure(label_text=_("downloads_active"))
+        self._update_download_buttons()
         self._on_type_changed()
 
     # ── Auto-atualização do yt-dlp ──────────────────────────────
@@ -869,6 +894,10 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
                 return
 
         self.logger.info("Encerrando aplicativo.")
+        for d in self.active_downloads:
+            ce = d.get("cancel_event")
+            if ce is not None:
+                ce.set()
         self._stop_clipboard_monitor()
         self.queue.save()
         if self.tray:

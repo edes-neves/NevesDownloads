@@ -35,6 +35,7 @@ class SystemTray:
         self.icon_path = icon_path
         self._icon: pystray.Icon | None = None
         self._thread: threading.Thread | None = None
+        self._paused: bool = False
         self.on_show: typing.Callable[[], None] | None = None
         self.on_quit: typing.Callable[[], None] | None = None
         self.on_pause_all: typing.Callable[[], None] | None = None
@@ -105,6 +106,15 @@ class SystemTray:
                 logger.error("Erro ao parar bandeja: %s", e)
 
     # ── Callbacks internos ──
+    def update_menu(self):
+        """Atualiza o menu do ícone da bandeja (se estiver em execução)."""
+        if self._icon is None:
+            return
+        try:
+            self._icon.menu = self._build_menu()
+        except Exception as e:
+            logger.warning("Falha ao atualizar menu da bandeja: %s", e)
+
     def _on_show(self, icon=None, item=None):
         if self.on_show:
             self.on_show()

@@ -3,6 +3,7 @@ import logging
 from typing import Any
 
 from app.core.settings_schema import SETTINGS_DEFAULTS, SETTINGS_TYPE_BOOL, SETTINGS_TYPE_INT, SETTINGS_VALID_VALUES
+from app.utils.json_io import atomic_write_json
 from app.utils.paths import get_app_data_dir
 
 logger = logging.getLogger("neves_downloads")
@@ -82,9 +83,7 @@ def _read() -> dict:
 
 
 def _write(config: dict):
-    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(config, f, ensure_ascii=False, indent=2)
+        atomic_write_json(CONFIG_FILE, config)
     except OSError as e:
         logger.error(f"Erro ao salvar config: {e}")

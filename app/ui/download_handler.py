@@ -18,6 +18,21 @@ from app.services.tiktok import get_content_info
 from app.ui.download_card import DownloadCard
 from app.ui.playlist_window import PlaylistWindow
 
+# Sites cujo conteúdo frequentemente exige conta logada para extrair
+_SOCIAL_GATED_HOSTS = (
+    "facebook.com",
+    "instagram.com",
+    "x.com",
+    "twitter.com",
+    "threads.net",
+    "tiktok.com",
+)
+
+
+def _login_required_hint(url: str, cookies_browser) -> bool:
+    """True quando o site provavelmente exige login e não há cookies configurados."""
+    return not cookies_browser and any(d in (url or "").lower() for d in _SOCIAL_GATED_HOSTS)
+
 
 class DownloadHandler:
     """Mixin que fornece orquestração de downloads para a janela principal."""
@@ -113,7 +128,7 @@ class DownloadHandler:
         mode = self.download_mode.get()
 
         if len(urls) > 1:
-            self._handle_multiple_urls(urls, mode)
+            self._handle_multiple_urls(urls)
             return
 
         url = urls[0]
@@ -132,14 +147,10 @@ class DownloadHandler:
 
     # ── Múltiplas URLs ─────────────────────────────────────────
 
-    def _handle_multiple_urls(self, urls: list[str], mode: str):
+    def _handle_multiple_urls(self, urls: list[str]):
         """Trata o caso em que várias URLs foram coladas/inseridas de uma vez."""
         self.logger.info("Detectadas %d URLs. Iniciando download em lote.", len(urls))
         self._clear_url_entry()
-
-        if mode == "audio":
-            self._start_batch_download(urls, _("batch.multiple_urls").format(count=len(urls)), mode)
-            return
 
         resposta = messagebox.askyesnocancel(
             _("dialog.batch.title"),
@@ -150,7 +161,7 @@ class DownloadHandler:
             self._set_url_text("\n".join(urls))
             return
         if resposta:
-            self._start_batch_download(urls, _("batch.multiple_urls").format(count=len(urls)), mode)
+            self._start_batch_download(urls, _("batch.multiple_urls").format(count=len(urls)), self.download_type.get())
         else:
             self._show_batch_selection_window(urls)
 
@@ -245,10 +256,16 @@ class DownloadHandler:
             try:
                 info = self.yt_service.extract_info(url, cookies_browser=cookies_browser)
                 if not info:
-                    self.after(
-                        0,
-                        lambda: card.update_progress({"status": "error", "status_text": _("card.info_failed")}),
-                    )
+
+                    def show_info_failed():
+                        if _login_required_hint(url, cookies_browser):
+                            status_text = _("error.login_necessario") + "\n" + _("error.login_necessario_dica")
+                        else:
+                            status_text = _("card.info_failed")
+                        card.update_progress({"status": "error", "status_text": status_text})
+                        self._cleanup_active_downloads()
+
+                    self.after(0, show_info_failed)
                     return
 
                 if info.get("entries"):
@@ -262,6 +279,7 @@ class DownloadHandler:
                         if resposta:
                             self._handle_playlist(url, selectable=True)
                         card.destroy()
+                        self._cleanup_active_downloads()
 
                     self.after(0, ask_playlist)
                     return
@@ -277,15 +295,12 @@ class DownloadHandler:
             except Exception as e:
                 self.logger.error("Erro ao extrair info: %s", e)
                 info = friendly_error(e)
-                self.after(
-                    0,
-                    lambda i=info: card.update_progress(
-                        {
-                            "status": "error",
-                            "status_text": i["amigavel"],
-                        }
-                    ),
-                )
+
+                def show_extract_error(i=info):
+                    card.update_progress({"status": "error", "status_text": i["amigavel"]})
+                    self._cleanup_active_downloads()
+
+                self.after(0, show_extract_error)
 
         thread = threading.Thread(target=extract_and_download, daemon=True)
         thread.start()
@@ -516,8 +531,10 @@ class DownloadHandler:
         lock = threading.Lock()
         results: dict[str, dict] = {}
         finished_count = [0]  # nº de vídeos finalizados (ok + erro)
+        item_progress: dict[int, float] = {}  # índice do item -> fração baixada (0..1)
+        last_bar_avg: list[float | None] = [None]  # último valor de barra enviado (para throttle)
 
-        def progress_general(data):
+        def progress_general(data, progress=None):
             current = data.get("current", 0) or 0
             total_items = data.get("total", total)
             ok = data.get("ok", 0)
@@ -527,7 +544,26 @@ class DownloadHandler:
                 text += f" {_('history.status_ok')}"
             elif status == "error" or status == "cancelled":
                 text += f" {_('history.status_error')}"
-            self.after(0, lambda: card.update_progress({"status_text": text, "status": status}))
+            payload = {"status_text": text, "status": status}
+            if progress is not None:
+                payload["progress"] = progress
+            self.after(0, lambda: card.update_progress(payload))
+
+        def track_bar(index, pct):
+            """Guarda a fração baixada do item e atualiza a barra-resumo (média do lote)."""
+            with lock:
+                item_progress[index] = pct
+                avg = sum(item_progress.values()) / total
+                prev = last_bar_avg[0]
+                changed = prev is None or abs(avg - prev) >= 0.01
+                if changed:
+                    last_bar_avg[0] = avg
+                    current = finished_count[0]
+            if changed:
+                progress_general(
+                    {"current": current, "total": total, "ok": current, "status": "downloading"},
+                    progress=avg,
+                )
 
         def download_one(url, index):
             """Baixa um único vídeo do lote, com seu próprio cartão e progresso real."""
@@ -536,8 +572,14 @@ class DownloadHandler:
             item_cancel = threading.Event()
 
             def progress_hook(d):
-                # Envia o progresso real (barra, %, velocidade, ETA) ao cartão.
+                # Envia o progresso real (barra, %, velocidade, ETA) ao cartão
+                # e alimenta a barra-resumo do lote com a média das frações.
                 self.after(0, lambda: item_card.update_progress(d))
+                total_b = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+                if total_b > 0:
+                    track_bar(index, min(1.0, (d.get("downloaded_bytes", 0) or 0) / total_b))
+                elif d.get("status") in ("finished", "completed"):
+                    track_bar(index, 1.0)
 
             item_card.cancel_callback = item_cancel.set
             item_card.pause_callback = lambda: pause_event.set()
@@ -557,7 +599,11 @@ class DownloadHandler:
                 try:
                     with lock:
                         current = finished_count[0]
-                    progress_general({"current": current + 1, "total": total, "ok": current, "status": "downloading"})
+                        avg_bar = sum(item_progress.values()) / total
+                    progress_general(
+                        {"current": current + 1, "total": total, "ok": current, "status": "downloading"},
+                        progress=avg_bar,
+                    )
 
                     self._mark_downloading(url)
                     result = self.yt_service.download_video(
@@ -571,7 +617,7 @@ class DownloadHandler:
                         subtitle_langs=self.subtitle_langs.get(),
                         organize=self.organize_var.get(),
                         progress_hook=progress_hook,
-                        cancel_event=item_cancel if item_cancel.is_set() else cancel_event,
+                        cancel_event=item_cancel,
                         pause_event=pause_event,
                         cookies_browser=cookies_browser,
                         proxy=self.proxy,
@@ -623,8 +669,12 @@ class DownloadHandler:
                             mode=mode,
                         )
 
+                    with lock:
+                        item_progress[index] = 1.0
+                        avg_bar = sum(item_progress.values()) / total
                     progress_general(
-                        {"current": current, "total": total, "ok": current, "status": result.get("status", "")}
+                        {"current": current, "total": total, "ok": current, "status": result.get("status", "")},
+                        progress=avg_bar,
                     )
 
                 except Exception as e:
@@ -640,7 +690,12 @@ class DownloadHandler:
                         results[url] = {"status": "error", "error": str(e)}
                         finished_count[0] += 1
                         current = finished_count[0]
-                    progress_general({"current": current, "total": total, "ok": current, "status": "error"})
+                        item_progress[index] = 0.0
+                        avg_bar = sum(item_progress.values()) / total
+                    progress_general(
+                        {"current": current, "total": total, "ok": current, "status": "error"},
+                        progress=avg_bar,
+                    )
 
         def batch_download():
             try:
@@ -812,7 +867,8 @@ class DownloadHandler:
             self._update_tray_menu()
 
     def _update_tray_menu(self):
-        """Atualiza os callbacks do menu da bandeja (sem recriar o menu)."""
-        if self.tray and self.tray.available and self.tray._icon is not None:
+        """Atualiza o estado atual (pausa) e o menu da bandeja."""
+        if self.tray and self.tray.available:
             paused = self.global_pause_event.is_set()
             self.tray._paused = paused
+            self.tray.update_menu()

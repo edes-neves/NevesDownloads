@@ -59,6 +59,12 @@ ERROR_PATTERNS: list[dict] = [
             "requires authentication",
             "precisa estar logado",
             "autenticação",
+            # Facebook/Instagram: conteúdo só visível para conta logada
+            "cannot parse data",
+            "no video formats found",
+            "no video formats",
+            "this page isn't available",
+            "page isn't available",
         ],
         "icone": "\U0001f464",
         "msg_key": "error.login_necessario",

@@ -197,6 +197,21 @@ class TestDownloadCardLogic:
         card.update_progress({"status_text": "Baixando..."})
         card.info_label.configure.assert_called_with(text="Baixando...")
 
+    def test_update_progress_status_text_moves_batch_bar(self):
+        card = self._make_card()
+        card.update_progress({"status_text": "2/5 videos (1 ok)", "current": 2, "total": 5})
+        card.progress_bar.set.assert_called_with(0.4)
+
+    def test_update_progress_status_text_batch_real_progress(self):
+        card = self._make_card()
+        card.update_progress({"status_text": "1/2 videos (0 ok)", "progress": 0.73})
+        card.progress_bar.set.assert_called_with(0.73)
+
+    def test_update_progress_status_text_no_total_keeps_bar(self):
+        card = self._make_card()
+        card.update_progress({"status_text": "Erro na extração de info", "status": "error"})
+        card.progress_bar.set.assert_not_called()
+
     def test_update_progress_no_total_shows_downloaded_only(self):
         card = self._make_card()
         data = {"downloaded_bytes": 500, "speed": 0, "eta": 0}

@@ -6,31 +6,40 @@ baixa o AppImage e substitui o executável atual.
 """
 
 import contextlib
+import hashlib
 import json
 import logging
+import os
+import re
 import shutil
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 from urllib.request import Request, urlopen
 
 from app.core.constants import APP_NAME, APP_VERSION
 from app.i18n import _
+from app.utils.json_io import atomic_write_json
+from app.utils.paths import get_app_data_dir
 
 logger = logging.getLogger("neves_downloads")
 
 # Configuração do repositório GitHub
 _GITHUB_REPO = "edes-neves/NevesDownloads"
 _GITHUB_API_URL = f"https://api.github.com/repos/{_GITHUB_REPO}/releases/latest"
+# URL de releases para consulta manual.
 _GITHUB_RELEASES_URL = f"https://github.com/{_GITHUB_REPO}/releases/latest"
+# Cache em disco da última release conferida (TTL de 1h).
+_UPDATE_CACHE_FILE = get_app_data_dir() / "update_check.json"
+_UPDATE_CACHE_TTL = 3600  # segundos (1h)
+_VER_SEG = re.compile(r"\d+")
 _USER_AGENT = f"{APP_NAME}/{APP_VERSION}"
 
 
 def _get_executable_path() -> Path | None:
     """Retorna o caminho do executável atual (AppImage ou script Python)."""
-    import os
-
     # AppImage define APPIMAGE ao extrair para /tmp
     appimage = os.environ.get("APPIMAGE")
     if appimage:
@@ -48,6 +57,37 @@ def _get_app_dir() -> Path:
     if exe:
         return exe.parent
     return Path(__file__).resolve().parent.parent.parent
+
+
+def _parse_version(v: str) -> tuple:
+    """Extrai apenas os segmentos numéricos de uma versão ("1.2.0-rc1" -> (1, 2, 0, 1))."""
+    return tuple(int(x) for x in _VER_SEG.findall(str(v)))
+
+
+def _load_update_cache() -> dict | None:
+    """Retorna a release em cache se ainda dentro do TTL; senão, None."""
+    try:
+        if not _UPDATE_CACHE_FILE.exists():
+            return None
+        with open(_UPDATE_CACHE_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        if time.time() - (data.get("timestamp", 0) or 0) > _UPDATE_CACHE_TTL:
+            return None
+        release = data.get("release")
+        return release if isinstance(release, dict) else None
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _save_update_cache(release: dict):
+    if not isinstance(release, dict):
+        return
+    # cache é apenas otimização
+    with contextlib.suppress(OSError):
+        atomic_write_json(
+            _UPDATE_CACHE_FILE,
+            {"timestamp": time.time(), "release": release},
+        )
 
 
 def check_latest_release() -> dict | None:
@@ -71,6 +111,11 @@ def check_latest_release() -> dict | None:
         }
     ou None em caso de falha.
     """
+    # Cache em disco com TTL de 1h evita bater na API a cada abertura.
+    cached = _load_update_cache()
+    if cached is not None:
+        return cached
+
     try:
         req = Request(
             _GITHUB_API_URL,
@@ -98,7 +143,7 @@ def check_latest_release() -> dict | None:
                     }
                 )
 
-        return {
+        result = {
             "version": version,
             "tag": tag,
             "name": data.get("name", ""),
@@ -106,6 +151,8 @@ def check_latest_release() -> dict | None:
             "published_at": data.get("published_at", ""),
             "assets": assets,
         }
+        _save_update_cache(result)
+        return result
 
     except Exception as e:
         logger.error("Erro ao verificar release no GitHub: %s", e)
@@ -124,6 +171,15 @@ def check_for_update() -> dict | None:
             "release": dict | None,
         }
     """
+    # Modo desenvolvimento (sem executável AppImage) não consulta a API.
+    if _get_executable_path() is None:
+        return {
+            "available": False,
+            "current": APP_VERSION,
+            "latest": "unknown",
+            "release": None,
+        }
+
     current = APP_VERSION
     release = check_latest_release()
 
@@ -137,11 +193,14 @@ def check_for_update() -> dict | None:
 
     latest = release["version"]
 
-    # Compara versões simples (x.y.z)
+    # Compara versões usando apenas os segmentos numéricos (suporta sufixos ex: 1.2.0-rc1)
     try:
-        current_parts = tuple(int(x) for x in current.split("."))
-        latest_parts = tuple(int(x) for x in latest.split("."))
-        available = latest_parts > current_parts
+        current_parts = _parse_version(current)
+        latest_parts = _parse_version(latest)
+        if current_parts and latest_parts:
+            available = latest_parts > current_parts
+        else:
+            available = current != latest
     except (ValueError, AttributeError):
         available = current != latest
 
@@ -153,7 +212,12 @@ def check_for_update() -> dict | None:
     }
 
 
-def download_release_asset(url: str, dest: Path, progress_callback=None) -> bool:
+def download_release_asset(
+    url: str,
+    dest: Path,
+    progress_callback=None,
+    expected_sha256: str = "",
+) -> bool:
     """
     Baixa um asset de release do GitHub.
 
@@ -161,9 +225,15 @@ def download_release_asset(url: str, dest: Path, progress_callback=None) -> bool
         url: URL de download do asset.
         dest: Caminho de destino.
         progress_callback: Callable(bytes_downloaded, total_size).
+        expected_sha256: Hash sha256 esperado. Vazio = sem validação.
 
     Retorna True se o download foi concluído com sucesso.
+
+    Nota: o fluxo automático (check_for_update -> install_update) não a usa;
+    fica disponível para integrações/UI.
     """
+    if not expected_sha256:
+        logger.warning("Download sem sha256; integridade não verificada")
     try:
         req = Request(
             url,
@@ -189,6 +259,20 @@ def download_release_asset(url: str, dest: Path, progress_callback=None) -> bool
                         progress_callback(downloaded, total)
 
         logger.info("Download concluído: %s (%d bytes)", dest.name, dest.stat().st_size)
+
+        if expected_sha256:
+            sha = hashlib.sha256(dest.read_bytes()).hexdigest()
+            if sha.lower() != expected_sha256.lower():
+                logger.error(
+                    "Hash sha256 divergente para %s (esperado %s, obtido %s). Arquivo removido.",
+                    dest.name,
+                    expected_sha256,
+                    sha,
+                )
+                with contextlib.suppress(OSError):
+                    dest.unlink()
+                return False
+
         return True
 
     except Exception as e:
@@ -204,6 +288,9 @@ def install_update(asset_path: Path) -> dict:
     com AppImage/FUSE), copia o novo para <exe>.pending e cria um helper
     script que, após o app fechar, faz a troca e limpa.
 
+    Nota de limitação: o helper roda em background e depende de bash,
+    flock (util-linux) disponíveis no PATH do sistema.
+
     Retorna:
         {"success": bool, "message": str, "requires_restart": bool}
     """
@@ -215,11 +302,26 @@ def install_update(asset_path: Path) -> dict:
             "requires_restart": False,
         }
 
+    if not os.access(exe.parent, os.W_OK):
+        return {
+            "success": False,
+            "message": "Diretório do executável não é gravável.",
+            "requires_restart": False,
+        }
+
     try:
         if not (asset_path.suffix == ".AppImage" or "AppImage" in asset_path.name):
             return {
                 "success": False,
                 "message": "Formato de asset não suportado: " + asset_path.name,
+                "requires_restart": False,
+            }
+
+        # Valida que o novo binário é um ELF íntegro antes de qualquer substituição
+        if not _is_valid_elf(asset_path):
+            return {
+                "success": False,
+                "message": "Binário baixado não é um ELF válido: " + asset_path.name,
                 "requires_restart": False,
             }
 
@@ -236,42 +338,59 @@ def install_update(asset_path: Path) -> dict:
         with contextlib.suppress(OSError):
             asset_path.unlink()
 
-        # Cria helper script que faz a troca após o app fechar
+        # Cria helper script que faz a troca após o app fechar.
+        # Valores passados por argumentos posicionais ($1..$5) — sem interpolar
+        # caminhos no corpo do script, evitando escape/execução de comandos.
         helper = exe.parent / ".update_helper.sh"
         helper.write_text(
-            f"""#!/bin/bash
+            """#!/bin/bash
 # Auto-update helper — espera o app fechar e substitui o AppImage
-EXE="{exe}"
-PENDING="{pending}"
-BAK="{exe}.bak"
+EXE=$1
+PENDING=$2
+BAK=$3
+APP_PID=$4
+LOCK=$5
 
-# Espera o app fechar (max 30s)
+# Exclusão mútua: impede que duas trocas rodem ao mesmo tempo
+exec 9>"$LOCK"
+flock 9
+
+# Espera o app fechar (max 30s) verificando o PID informado pelo app
 for i in $(seq 1 30); do
-    if ! pgrep -f "$EXE" > /dev/null 2>&1; then
+    if ! kill -0 "$APP_PID" 2>/dev/null; then
         break
     fi
     sleep 1
 done
 
-# Pequena pausa extra para garantir
+# Pequena pausa extra para garantir flush de sistema de arquivos
 sleep 2
 
-# Troca os ficheiros
+# Troca os ficheiros (já protegido pelo flock)
 if [ -f "$PENDING" ]; then
     [ -f "$BAK" ] && rm -f "$BAK"
     mv "$EXE" "$BAK" 2>/dev/null
     mv "$PENDING" "$EXE"
     chmod +x "$EXE"
-    rm -f "$0"
 fi
+rm -f "$0"
 """,
             encoding="utf-8",
         )
         helper.chmod(0o755)
 
+        lock_file = exe.parent / ".update.lock"
         # Lança o helper em background (detached) e fecha o app
         subprocess.Popen(
-            ["/bin/bash", str(helper)],
+            [
+                "/bin/bash",
+                str(helper),
+                str(exe),
+                str(pending),
+                str(exe) + ".bak",
+                str(os.getpid()),
+                str(lock_file),
+            ],
             start_new_session=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -296,14 +415,11 @@ fi
         }
 
 
-def _cleanup_backups():
-    """Remove backups de atualizações anteriores."""
-    exe = _get_executable_path()
-    if not exe:
-        return
-    for bak in exe.parent.glob("*.AppImage.bak"):
-        try:
-            bak.unlink()
-            logger.info("Backup removido: %s", bak.name)
-        except OSError:
-            pass
+def _is_valid_elf(path: Path) -> bool:
+    """Verifica se o arquivo começa com o magic number de ELF (\\x7fELF)."""
+    try:
+        with open(path, "rb") as f:
+            return f.read(4) == b"\x7fELF"
+    except OSError as e:
+        logger.error("Falha ao validar ELF de %s: %s", path, e)
+        return False

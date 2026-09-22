@@ -6,6 +6,9 @@ e notifica o aplicativo principal quando detecta. Funciona em segundo plano
 com intervalo configurável (padrão: 1.5 segundos).
 
 Compatível com X11 (xclip/xsel) e Wayland (wl-paste) no Linux.
+
+A leitura do clipboard é feita na própria thread de polling (single-threaded);
+nenhum estado é compartilhado entre threads além de flags de controle.
 """
 
 import logging
@@ -18,6 +21,14 @@ logger = logging.getLogger("neves_downloads")
 
 URL_PATTERN = re.compile(r'https?://[^\s,;<>"\']+')
 _POLL_INTERVAL = 1.5  # segundos
+
+# Hoje só roda em Linux; mantido separado para facilitar adicionar outras
+# ferramentas ou plataformas no futuro.
+_CLIPBOARD_TOOLS = (
+    ("xclip", ("xclip", "-selection", "clipboard", "-o")),
+    ("xsel", ("xsel", "--clipboard", "--output")),
+    ("wl-paste", ("wl-paste",)),
+)
 
 
 class ClipboardMonitor:
@@ -89,51 +100,19 @@ class ClipboardMonitor:
     @staticmethod
     def _read_clipboard() -> str | None:
         """Lê o conteúdo atual da área de transferência no Linux."""
-        # Tenta xclip (X11)
-        try:
-            result = subprocess.run(
-                ["xclip", "-selection", "clipboard", "-o"],
-                capture_output=True,
-                text=True,
-                timeout=2,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                return result.stdout.strip()
-        except FileNotFoundError:
-            pass
-        except subprocess.TimeoutExpired:
-            pass
-
-        # Tenta xsel (X11)
-        try:
-            result = subprocess.run(
-                ["xsel", "--clipboard", "--output"],
-                capture_output=True,
-                text=True,
-                timeout=2,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                return result.stdout.strip()
-        except FileNotFoundError:
-            pass
-        except subprocess.TimeoutExpired:
-            pass
-
-        # Tenta wl-paste (Wayland)
-        try:
-            result = subprocess.run(
-                ["wl-paste"],
-                capture_output=True,
-                text=True,
-                timeout=2,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                return result.stdout.strip()
-        except FileNotFoundError:
-            pass
-        except subprocess.TimeoutExpired:
-            pass
-
+        for _tool, args in _CLIPBOARD_TOOLS:
+            try:
+                result = subprocess.run(
+                    args,
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                )
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                continue  # tenta a próxima ferramenta disponível
+            text = result.stdout.strip()
+            if result.returncode == 0 and text:
+                return text
         return None
 
     @staticmethod

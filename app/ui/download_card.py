@@ -103,10 +103,6 @@ class DownloadCard(ctk.CTkFrame):
         else:
             self.pause_btn.configure(text=_("card.pause"), fg_color="#2b6b8c", hover_color="#1e4f6b")
 
-    def set_resumed(self):
-        """Força o estado de retomada visual."""
-        self.set_paused(False)
-
     def disable_pause(self):
         """Desabilita o botão pausar (ex.: download concluído)."""
         self.pause_btn.configure(state="disabled")
@@ -120,9 +116,18 @@ class DownloadCard(ctk.CTkFrame):
         if self.cancelled:
             return
 
-        # Se houver texto de status personalizado, usa-o e retorna (não atualiza barra)
+        # Se houver texto de status personalizado, usa-o.
+        # A barra segue a média real do lote se 'progress' vier numérico;
+        # senão, usa current/total (contagem de itens) quando disponível.
         if "status_text" in data:
             self.info_label.configure(text=data["status_text"])
+            pct = data.get("progress")
+            if pct is None:
+                total_items = data.get("total", 0) or 0
+                if total_items > 0:
+                    pct = (data.get("current", 0) or 0) / total_items
+            if pct is not None:
+                self.progress_bar.set(max(0.0, min(1.0, float(pct))))
             # Atualiza também status final se houver
             if data.get("status") == "finished":
                 self.progress_bar.set(1.0)

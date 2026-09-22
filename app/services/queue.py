@@ -17,6 +17,11 @@ Formato persistido (JSON ~/.neves_downloads/queue.json):
     },
     ...
 ]
+
+Thread-safety: todas as mutações são feitas sob um único threading.Lock.
+A gravação em disco é agendada após cada mutação (debounce de ~1s) e pode
+ser forçada a qualquer momento com save()/flush(). Métodos que retornam
+itens (ex.: next_pending) retornam CÓPIAS, para não expor a lista interna.
 """
 
 import json
@@ -25,6 +30,7 @@ import threading
 from datetime import datetime
 from typing import Any
 
+from app.utils.json_io import atomic_write_json
 from app.utils.paths import get_app_data_dir
 
 logger = logging.getLogger("neves_downloads")
@@ -40,6 +46,8 @@ class DownloadQueue:
         self._items: list[dict[str, Any]] = []
         self._lock = threading.Lock()
         self._persist = persist
+        self._save_version = 0
+        self._save_timer: threading.Timer | None = None
         self._load()
 
     # ── Persistência ───────────────────────────────────────────
@@ -58,14 +66,41 @@ class DownloadQueue:
             logger.error(f"Erro ao carregar fila: {e}")
 
     def _save(self):
+        """Agenda gravação em disco (debounce de ~1s). Chamado com o lock adquirido."""
         if not self._persist:
             return
-        QUEUE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        snapshot = list(self._items)
+        self._save_version += 1
+        version = self._save_version
+        timer = getattr(self, "_save_timer", None)
+        if timer is not None:
+            timer.cancel()
+        timer = threading.Timer(1.0, self._write_snapshot, args=(snapshot, version))
+        timer.daemon = True
+        self._save_timer = timer
+        timer.start()
+
+    def _write_snapshot(self, snapshot: list[dict[str, Any]], version: int):
+        """Grava um snapshot em disco (executado em thread de background)."""
+        if not self._persist or version != self._save_version:
+            return  # versão obsoleta; houve gravação mais recente
         try:
-            with open(QUEUE_FILE, "w", encoding="utf-8") as f:
-                json.dump(self._items, f, ensure_ascii=False, indent=2)
+            atomic_write_json(QUEUE_FILE, snapshot)
         except OSError as e:
             logger.error(f"Erro ao salvar fila: {e}")
+
+    def flush(self):
+        """Força gravação imediata do estado atual em disco."""
+        if not self._persist:
+            return
+        self._save_version += 1
+        timer = getattr(self, "_save_timer", None)
+        if timer is not None:
+            timer.cancel()
+            self._save_timer = None
+        with self._lock:
+            snapshot = list(self._items)
+        self._write_snapshot(snapshot, self._save_version)
 
     # ── Gerenciamento de itens ─────────────────────────────────
 
@@ -134,11 +169,21 @@ class DownloadQueue:
             return list(self._items)
 
     def next_pending(self) -> dict[str, Any] | None:
-        """Pega o próximo item 'pending' sem removê-lo da fila."""
+        """Retorna uma cópia do próximo item 'pending', sem removê-lo da fila."""
         with self._lock:
             for item in self._items:
                 if item.get("status") == "pending":
-                    return item
+                    return dict(item)
+            return None
+
+    def pop_next_pending(self) -> dict[str, Any] | None:
+        """Remove e retorna o próximo item 'pending' (operação atômica)."""
+        with self._lock:
+            for i, item in enumerate(self._items):
+                if item.get("status") == "pending":
+                    self._items.pop(i)
+                    self._save()
+                    return dict(item)
             return None
 
     def mark_downloading(self, url: str):
@@ -148,20 +193,10 @@ class DownloadQueue:
         self.set_status(url, "paused")
 
     def mark_done(self, url: str):
-        with self._lock:
-            for item in self._items:
-                if item.get("url") == url:
-                    item["status"] = "done"
-                    break
-            self._save()
+        self.set_status(url, "done")
 
     def mark_error(self, url: str):
-        with self._lock:
-            for item in self._items:
-                if item.get("url") == url:
-                    item["status"] = "error"
-                    break
-            self._save()
+        self.set_status(url, "error")
 
     def prune_finished(self):
         """Remove itens 'done'/'error' da fila para mantê-la enxuta."""
@@ -173,4 +208,4 @@ class DownloadQueue:
 
     def save(self):
         """Força gravação em disco (ex.: ao fechar o app)."""
-        self._save()
+        self.flush()
