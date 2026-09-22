@@ -6,7 +6,7 @@ SETTINGS_DEFAULTS: dict = {
     "download_path": str(Path.home() / "Downloads"),
     # ── Aparência ──
     "appearance_mode": "system",  # "system" | "light" | "dark"
-    "automatic_updates": True,  # avisar/verificar atualizações (placeholder)
+    "automatic_updates": True,  # verificar atualizações automaticamente no início
     "default_language": "pt-BR",  # idioma da interface
     # ── Padrões de download ──
     "default_type": "video",  # "video" | "audio"
@@ -18,13 +18,17 @@ SETTINGS_DEFAULTS: dict = {
     "default_subtitle_langs": "pt,en",
     "default_organize": False,
     "default_cookies_browser": "Nenhum",
+    "cookies_file_path": "",  # caminho de cookies.txt (alternativa aos cookies de navegador)
+    "playlist_audio_single": False,  # baixar playlists de áudio como um único arquivo
     # ── Rede / Desempenho ──
     "max_concurrent_downloads": 3,  # downloads simultâneos
     "concurrent_fragments": 1,  # fragments paralelos por download (multi-threading)
     "proxy": "",  # ex: socks5://127.0.0.1:1080
     "limit_speed": 0,  # bytes/segundo (0 = ilimitado)
     "retries": 3,
+    "transient_retries": 2,  # retries extras em erros transitórios (rede/rate limit/5xx)
     "socket_timeout": 30,
+    "notifications_enabled": True,  # notificação de conclusão (toast in-app + sistema)
     # ── SponsorBlock ──
     "sponsorblock_enabled": False,  # ativar remoção de segmentos via SponsorBlock
     "sponsorblock_categories": "sponsor,selfpromo,interaction,intro,outro,preview",
@@ -71,12 +75,14 @@ SETTINGS_TYPE_BOOL: set = {
     "automatic_updates",
     "default_subtitles_enabled",
     "default_organize",
+    "playlist_audio_single",
     "embed_thumbnail",
     "write_thumbnail",
     "confirm_on_exit_with_active_downloads",
     "auto_clear_completed",
     "sponsorblock_enabled",
     "tiktok_watermark_removal",
+    "notifications_enabled",
 }
 
 SETTINGS_TYPE_INT: set = {
@@ -84,5 +90,6 @@ SETTINGS_TYPE_INT: set = {
     "concurrent_fragments",
     "limit_speed",
     "retries",
+    "transient_retries",
     "socket_timeout",
 }

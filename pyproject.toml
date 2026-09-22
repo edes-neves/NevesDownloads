@@ -1,10 +1,11 @@
 [project]
 name = "neves-downloads"
-version = "1.0.0"
 description = "Gerenciador de downloads de vídeos e áudios com interface moderna e suporte a playlists."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11"
+# A versão é definida em app/_version.py (fonte única).
+dynamic = ["version"]
 authors = [
     {name = "José Edes Neves", email = "edes.neves7@gmail.com"},
 ]
@@ -42,6 +43,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "app._version.__version__"}
 
 [tool.ruff]
 target-version = "py311"

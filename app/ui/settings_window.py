@@ -48,7 +48,9 @@ class SettingsWindow(ctk.CTkToplevel):
         self.format_var = ctk.StringVar(value=self._cfg.get("default_format"))
         self.audio_format_var = ctk.StringVar(value=self._cfg.get("default_audio_format"))
         self.cookies_var = ctk.StringVar(value=self._cfg.get("default_cookies_browser"))
+        self.cookies_file_var = ctk.StringVar(value=self._cfg.get("cookies_file_path", ""))
         self.organize_var = ctk.BooleanVar(value=self._cfg.get("default_organize", False))
+        self.playlist_audio_single_var = ctk.BooleanVar(value=self._cfg.get("playlist_audio_single", False))
         self.subtitles_var = ctk.BooleanVar(value=self._cfg.get("default_subtitles_enabled", False))
         self.subtitle_langs_var = ctk.StringVar(value=self._cfg.get("default_subtitle_langs", "pt,en"))
 
@@ -56,7 +58,9 @@ class SettingsWindow(ctk.CTkToplevel):
         self.proxy_var = ctk.StringVar(value=self._cfg.get("proxy", ""))
         self.limit_speed_var = ctk.StringVar(value=str(self._cfg.get("limit_speed", 0)))
         self.retries_var = ctk.StringVar(value=str(self._cfg.get("retries", 3)))
+        self.transient_retries_var = ctk.StringVar(value=str(self._cfg.get("transient_retries", 2)))
         self.socket_timeout_var = ctk.StringVar(value=str(self._cfg.get("socket_timeout", 30)))
+        self.notifications_var = ctk.BooleanVar(value=self._cfg.get("notifications_enabled", True))
 
         self.filename_template_var = ctk.StringVar(value=self._cfg.get("filename_template", "%(title)s.%(ext)s"))
         self.embed_thumb_var = ctk.BooleanVar(value=self._cfg.get("embed_thumbnail", False))
@@ -141,6 +145,19 @@ class SettingsWindow(ctk.CTkToplevel):
         self._option_menu(scroll, row, self.cookies_var, COOKIES_OPTIONS)
         row += 1
 
+        self._label(scroll, row, _("settings.cookies_file"))
+        cookies_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        cookies_frame.grid(row=row, column=1, sticky="w", padx=(0, 10), pady=3)
+        ctk.CTkEntry(cookies_frame, textvariable=self.cookies_file_var, height=30, width=280).pack(side="left")
+        ctk.CTkButton(
+            cookies_frame,
+            text=_("settings.cookies_file_browse"),
+            width=80,
+            height=30,
+            command=self._browse_cookies_file,
+        ).pack(side="left", padx=(5, 0))
+        row += 1
+
         # Checkboxes organizar / legendas
         ctk.CTkCheckBox(scroll, text=_("settings.organize"), variable=self.organize_var).grid(
             row=row, column=0, sticky="w", padx=10, pady=2
@@ -156,6 +173,13 @@ class SettingsWindow(ctk.CTkToplevel):
         ctk.CTkEntry(scroll, textvariable=self.subtitle_langs_var, height=30, width=320).grid(
             row=row, column=1, sticky="w", padx=(0, 10), pady=3
         )
+        row += 1
+
+        ctk.CTkCheckBox(
+            scroll,
+            text=_("settings.playlist_audio_single"),
+            variable=self.playlist_audio_single_var,
+        ).grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=2)
         row += 2
 
         # ── Rede e Desempenho ──
@@ -185,6 +209,12 @@ class SettingsWindow(ctk.CTkToplevel):
 
         self._label(scroll, row, _("settings.retries"))
         ctk.CTkEntry(scroll, textvariable=self.retries_var, height=30, width=80, placeholder_text="3").grid(
+            row=row, column=1, sticky="w", padx=(0, 10), pady=3
+        )
+        row += 1
+
+        self._label(scroll, row, _("settings.transient_retries"))
+        ctk.CTkEntry(scroll, textvariable=self.transient_retries_var, height=30, width=80, placeholder_text="2").grid(
             row=row, column=1, sticky="w", padx=(0, 10), pady=3
         )
         row += 1
@@ -287,6 +317,11 @@ class SettingsWindow(ctk.CTkToplevel):
         )
         row += 1
 
+        ctk.CTkCheckBox(scroll, text=_("settings.notifications"), variable=self.notifications_var).grid(
+            row=row, column=0, columnspan=2, sticky="w", padx=10, pady=2
+        )
+        row += 1
+
         # ── Botões ──
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
         btn_frame.grid(row=1, column=0, sticky="ew", padx=15, pady=(5, 15))
@@ -336,6 +371,17 @@ class SettingsWindow(ctk.CTkToplevel):
 
     # ── Ações ────────────────────────────────────────────────────
 
+    def _browse_cookies_file(self):
+        from tkinter import filedialog
+
+        path = filedialog.askopenfilename(
+            parent=self,
+            title=_("settings.cookies_file"),
+            filetypes=[(_("settings.cookies_file_type"), "*.txt"), ("*", "*.*")],
+        )
+        if path:
+            self.cookies_file_var.set(path)
+
     def _apply_appearance(self, mode):
         """Aplica o tema em tempo real (pré-visualização)."""
         ctk.set_appearance_mode(mode)
@@ -364,14 +410,18 @@ class SettingsWindow(ctk.CTkToplevel):
         self.format_var.set(self._cfg.get("default_format"))
         self.audio_format_var.set(self._cfg.get("default_audio_format"))
         self.cookies_var.set(self._cfg.get("default_cookies_browser"))
+        self.cookies_file_var.set(self._cfg.get("cookies_file_path", ""))
         self.organize_var.set(self._cfg.get("default_organize", False))
+        self.playlist_audio_single_var.set(self._cfg.get("playlist_audio_single", False))
         self.subtitles_var.set(self._cfg.get("default_subtitles_enabled", False))
         self.subtitle_langs_var.set(self._cfg.get("default_subtitle_langs", "pt,en"))
         self.max_concurrent_var.set(str(self._cfg.get("max_concurrent_downloads", 3)))
         self.proxy_var.set(self._cfg.get("proxy", ""))
         self.limit_speed_var.set(str(self._cfg.get("limit_speed", 0)))
         self.retries_var.set(str(self._cfg.get("retries", 3)))
+        self.transient_retries_var.set(str(self._cfg.get("transient_retries", 2)))
         self.socket_timeout_var.set(str(self._cfg.get("socket_timeout", 30)))
+        self.notifications_var.set(self._cfg.get("notifications_enabled", True))
         self.filename_template_var.set(self._cfg.get("filename_template", "%(title)s.%(ext)s"))
         self.embed_thumb_var.set(self._cfg.get("embed_thumbnail", False))
         self.write_thumb_var.set(self._cfg.get("write_thumbnail", False))
@@ -427,7 +477,9 @@ class SettingsWindow(ctk.CTkToplevel):
         settings.save("default_format", self.format_var.get())
         settings.save("default_audio_format", self.audio_format_var.get())
         settings.save("default_cookies_browser", self.cookies_var.get())
+        settings.save("cookies_file_path", self.cookies_file_var.get().strip())
         settings.save("default_organize", self.organize_var.get())
+        settings.save("playlist_audio_single", self.playlist_audio_single_var.get())
         settings.save("default_subtitles_enabled", self.subtitles_var.get())
         settings.save("default_subtitle_langs", self.subtitle_langs_var.get())
 
@@ -437,7 +489,9 @@ class SettingsWindow(ctk.CTkToplevel):
         settings.save("proxy", proxy)
         settings.save("limit_speed", _valid_int(self.limit_speed_var, "Limite de velocidade", 0))
         settings.save("retries", _valid_positive_int(self.retries_var, "Tentativas", 3))
+        settings.save("transient_retries", _valid_int(self.transient_retries_var, "Retries transitórios", 2))
         settings.save("socket_timeout", _valid_positive_int(self.socket_timeout_var, "Timeout", 30))
+        settings.save("notifications_enabled", self.notifications_var.get())
 
         settings.save("filename_template", self.filename_template_var.get().strip() or "%(title)s.%(ext)s")
         settings.save("embed_thumbnail", self.embed_thumb_var.get())

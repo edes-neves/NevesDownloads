@@ -22,7 +22,7 @@ cd "$ROOT_DIR"
 
 APP_NAME="NevesDownloads"
 APP_DISPLAY="Neves Downloads"
-APP_VERSION="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])' 2>/dev/null || echo "1.0.0")"
+APP_VERSION="$(python3 packaging/get_version.py 2>/dev/null || echo "0.0.0")"
 
 BUILD_DMG=false
 for arg in "$@"; do

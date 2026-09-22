@@ -3,11 +3,11 @@
 # Neves Downloads - Script de release automatizado
 #
 # Uso:
-#   ./release.sh              # usa versão de app/core/constants.py
-#   ./release.sh 1.2.0        # define versão, atualiza constants.py e publica
+#   ./release.sh              # usa versão de app/_version.py
+#   ./release.sh 1.2.0        # define versão, atualiza app/_version.py e publica
 #
 # O que faz:
-#   1. Atualiza APP_VERSION em app/core/constants.py (se versão fornecida)
+#   1. Atualiza __version__ em app/_version.py (se versão fornecida)
 #   2. Build do binário com PyInstaller
 #   3. Cria AppImage
 #   4. Commit + tag v<versão>
@@ -25,12 +25,12 @@ APP_NAME="NevesDownloads"
 # ── Versão ───────────────────────────────────────────────────────────────────
 if [ "${1:-}" != "" ]; then
     NEW_VERSION="$1"
-    # Atualiza APP_VERSION em constants.py
-    sed -i "s/^APP_VERSION = \".*\"/APP_VERSION = \"${NEW_VERSION}\"/" app/core/constants.py
+    # Atualiza __version__ em app/_version.py (fonte única de versão)
+    sed -i "s/^__version__ = \".*\"/__version__ = \"${NEW_VERSION}\"/" app/_version.py
     echo "Versão atualizada para ${NEW_VERSION}"
 fi
 
-APP_VERSION="$(python3 -c "import tomllib; print(tomllib.load(open('app/core/constants.py','rb'))['APP_VERSION'])" 2>/dev/null || grep -oP 'APP_VERSION = "\K[^"]+' app/core/constants.py)"
+APP_VERSION="$(python3 packaging/get_version.py 2>/dev/null || grep -oP '__version__ = "\K[^"]+' app/_version.py)"
 
 if [ -z "$APP_VERSION" ]; then
     echo "ERRO: Não foi possível detectar APP_VERSION" >&2

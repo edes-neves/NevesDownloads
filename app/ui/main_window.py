@@ -52,6 +52,8 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
         self.subtitle_langs = tk.StringVar(value=settings.load("default_subtitle_langs"))
         self.download_path = tk.StringVar(value=settings.load("download_path"))
         self.cookies_browser = tk.StringVar(value=settings.load("default_cookies_browser"))
+        self.cookies_file = settings.load("cookies_file_path") or ""
+        self.playlist_audio_single = bool(settings.load("playlist_audio_single"))
         self.organize_var = tk.BooleanVar(value=settings.load("default_organize"))
         self.subtitles_var = tk.BooleanVar(value=settings.load("default_subtitles_enabled"))
 
@@ -59,7 +61,9 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
         self.max_concurrent = int(settings.load("max_concurrent_downloads"))
         self.limit_speed = int(settings.load("limit_speed"))
         self.retries = int(settings.load("retries"))
+        self.transient_retries = int(settings.load("transient_retries"))
         self.socket_timeout = int(settings.load("socket_timeout"))
+        self.notifications_enabled = bool(settings.load("notifications_enabled"))
         self.proxy = settings.load("proxy")
         self.filename_template = settings.load("filename_template")
         self.embed_thumbnail = bool(settings.load("embed_thumbnail"))
@@ -71,6 +75,8 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
         self.sponsorblock_categories = settings.load("sponsorblock_categories")
         self.concurrent_fragments = int(settings.load("concurrent_fragments"))
         self.tiktok_watermark_removal = bool(settings.load("tiktok_watermark_removal"))
+        # Verificação automática de atualizações do app na inicialização
+        self.automatic_updates_enabled = bool(settings.load("automatic_updates"))
         # Semáforo para limitar downloads simultâneos
         self.semaphore = threading.Semaphore(self.max_concurrent)
         self._old_max_concurrent = self.max_concurrent
@@ -115,11 +121,25 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
         self._download_active = False
         self._download_paused = False
 
+        # Checagem silenciosa de atualização na inicialização
+        # (em modo desenvolvimento retorna sem fazer nada).
+        if self.automatic_updates_enabled:
+            self.after(3000, lambda: self._check_app_update(automatic=True))
+
     # ── Menu de contexto ────────────────────────────────────────
 
     def _bind_right_click(self):
-        """Vincula botão direito para colar URL na entry."""
+        """Vincula botão direito e Ctrl+V para colar URL na entry."""
         self.url_entry.bind("<Button-3>", self._show_context_menu)
+        # Colagem direta na entry: empilha URLs (uma por linha) e o "break"
+        # impede o Ctrl+V nativo do Text e o binding de toplevel de atuarem
+        # sobre o mesmo evento (evitando colagem duplicada).
+        self.url_entry.bind("<Control-v>", self._paste_url_shortcut)
+
+    def _paste_url_shortcut(self, event=None):
+        """Cola o clipboard na caixa de URL empilhando e interrompe o evento."""
+        self._paste_from_clipboard()
+        return "break"
 
     def _show_context_menu(self, event):
         """Exibe menu de contexto na entry com opção Colar."""
@@ -140,6 +160,7 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
         # ── Arquivo ──
         file_menu = tk.Menu(menubar, tearoff=0)
         file_menu.add_command(label=_("menu.file.paste_url"), command=self._paste_from_clipboard, accelerator="Ctrl+V")
+        file_menu.add_command(label=_("menu.file.import_list"), command=self._import_urls_from_file)
         file_menu.add_separator()
         file_menu.add_command(label=_("menu.file.exit"), command=self._on_close)
         menubar.add_cascade(label=_("menu.file"), menu=file_menu)
@@ -644,6 +665,12 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
             settings.save("download_path", dialog.result_path)
             self.logger.info("Pasta de destino alterada: %s", dialog.result_path)
 
+    def _show_toast(self, message: str, kind: str = "ok"):
+        """Mostra uma notificação in-app (toast) no canto da tela."""
+        from app.ui.toast import show_toast
+
+        show_toast(self, message, kind=kind)
+
     def _open_settings_window(self):
         """Abre a janela de configurações avançadas persistentes."""
         SettingsWindow(
@@ -662,6 +689,8 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
         self.audio_format.set(settings.load("default_audio_format"))
         self.subtitle_langs.set(settings.load("default_subtitle_langs"))
         self.cookies_browser.set(settings.load("default_cookies_browser"))
+        self.cookies_file = settings.load("cookies_file_path") or ""
+        self.playlist_audio_single = bool(settings.load("playlist_audio_single"))
         self.organize_var.set(bool(settings.load("default_organize")))
         self.subtitles_var.set(bool(settings.load("default_subtitles_enabled")))
 
@@ -671,7 +700,9 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
             self._old_max_concurrent = self.max_concurrent
         self.limit_speed = int(settings.load("limit_speed"))
         self.retries = int(settings.load("retries"))
+        self.transient_retries = int(settings.load("transient_retries"))
         self.socket_timeout = int(settings.load("socket_timeout"))
+        self.notifications_enabled = bool(settings.load("notifications_enabled"))
         self.proxy = settings.load("proxy")
         self.filename_template = settings.load("filename_template")
         self.embed_thumbnail = bool(settings.load("embed_thumbnail"))
@@ -682,6 +713,7 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
         self.sponsorblock_categories = settings.load("sponsorblock_categories")
         self.concurrent_fragments = int(settings.load("concurrent_fragments"))
         self.tiktok_watermark_removal = bool(settings.load("tiktok_watermark_removal"))
+        self.automatic_updates_enabled = bool(settings.load("automatic_updates"))
 
         # Atualiza idioma e reaplica os textos na interface
         set_language(settings.load("default_language") or "pt-BR")
@@ -774,32 +806,42 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
 
     # ── Auto-atualização do aplicativo (GitHub Releases) ────────
 
-    def _check_app_update(self):
-        """Verifica se há uma nova versão do aplicativo no GitHub."""
+    def _check_app_update(self, automatic: bool = False):
+        """Verifica se há uma nova versão do aplicativo no GitHub.
+
+        Em modo ``automatic`` (inicialização), a verificação é silenciosa:
+        só informa o usuário quando existe uma versão nova disponível.
+        """
         from app.services.app_updater import check_for_update
 
         self.logger.info("Verificando atualização do aplicativo...")
 
         def _check():
             result = check_for_update()
-            self.after(0, lambda: self._show_app_update_result(result))
+            self.after(
+                0,
+                lambda: self._show_app_update_result(result, silent_if_uptodate=automatic),
+            )
 
         threading.Thread(target=_check, daemon=True).start()
 
-    def _show_app_update_result(self, result: dict | None):
+    def _show_app_update_result(self, result: dict | None, silent_if_uptodate: bool = False):
         """Exibe o resultado da verificação de atualização do app."""
         if result is None:
-            messagebox.showerror(
-                _("dialog.update.title"),
-                _("app_updater.failed").format(error="Não foi possível conectar ao GitHub."),
-            )
+            self.logger.warning("Falha na verificação de atualização (sem conexão?).")
+            if not silent_if_uptodate:
+                messagebox.showerror(
+                    _("dialog.update.title"),
+                    _("app_updater.failed").format(error="Não foi possível conectar ao GitHub."),
+                )
             return
 
         if not result["available"]:
-            messagebox.showinfo(
-                _("dialog.update.title"),
-                _("app_updater.up_to_date").format(version=result["current"]),
-            )
+            if not silent_if_uptodate:
+                messagebox.showinfo(
+                    _("dialog.update.title"),
+                    _("app_updater.up_to_date").format(version=result["current"]),
+                )
             return
 
         resposta = messagebox.askyesno(
@@ -905,4 +947,10 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
         self.queue.save()
         if self.tray:
             self.tray.stop()
+        try:
+            from app.ui.toast import dismiss_all
+
+            dismiss_all()
+        except Exception:
+            pass
         self.destroy()

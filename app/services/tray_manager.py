@@ -50,7 +50,7 @@ class SystemTray:
         if self.icon_path and self.icon_path.exists():
             try:
                 img: Image.Image = Image.open(self.icon_path)
-                img = img.resize((64, 64), Image.LANCZOS)
+                img = img.resize((64, 64), Image.Resampling.LANCZOS)
                 return img
             except Exception as e:
                 logger.error("Erro ao carregar ícone do tray: %s", e)

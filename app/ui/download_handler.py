@@ -42,12 +42,21 @@ class DownloadHandler:
     # ── Helpers de URL ─────────────────────────────────────────
 
     def _paste_from_clipboard(self):
-        """Cola o conteúdo da área de transferência na entry."""
+        """Cola o conteúdo da área de transferência na entry.
+
+        Se já houver texto na caixa, a nova colagem é acrescentada em uma
+        nova linha (empilhando URLs) em vez de substituir o conteúdo.
+        """
         try:
-            clipboard = self.clipboard_get()
-            self._set_url_text(clipboard)
+            pasted = str(self.clipboard_get() or "").strip()
         except Exception:
-            pass
+            return
+        if not pasted:
+            return
+        existing = self._get_url_text()
+        if existing:
+            pasted = f"{existing}\n{pasted}"
+        self._set_url_text(pasted)
 
     def _get_url_text(self) -> str:
         """Retorna o texto da caixa de URL (sem espaços extras)."""
@@ -100,6 +109,68 @@ class DownloadHandler:
     def _get_cookies_browser(self) -> str | None:
         val: str = self.cookies_browser.get()
         return None if val == "Nenhum" else val
+
+    @staticmethod
+    def _urls_from_file(path: Path) -> list[str]:
+        """Lê um arquivo de texto e retorna todas as URLs http/https encontradas."""
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            return []
+        return DownloadHandler._extract_urls(text)
+
+    def _import_urls_from_file(self):
+        """Importa uma lista de URLs de um arquivo de texto (um por linha)."""
+        from tkinter import filedialog
+
+        path = filedialog.askopenfilename(
+            parent=self.winfo_toplevel(),
+            title=_("dialog.import.title"),
+            filetypes=[(_("dialog.import.filetype"), "*.txt"), (_("dialog.import.all_files"), "*.*")],
+        )
+        if not path:
+            return
+        urls = self._urls_from_file(Path(path))
+        if not urls:
+            messagebox.showinfo(_("dialog.import.title"), _("dialog.import.empty"))
+            return
+        self.logger.info("Arquivo importado: %d URL(s) em %s", len(urls), path)
+        self._handle_multiple_urls(urls)
+
+    def _notify_result(self, result: dict, batch: bool = False):
+        """Mostra toast in-app e notificação de sistema ao concluir um download."""
+        if not getattr(self, "notifications_enabled", True):
+            return
+        status = result.get("status")
+        if status == "cancelled":
+            return
+        from app.services.notifications import notify_system
+
+        if batch:
+            summary = result.get("title") or _("notify.batch")
+            if status == "completed":
+                message = _("notify.batch_done").format(summary=summary)
+                system_message = _("notify.system_batch_done").format(summary=summary)
+                kind = "ok"
+            else:
+                message = _("notify.batch_error").format(summary=summary)
+                system_message = _("notify.system_batch_error").format(summary=summary)
+                kind = "error"
+            self.after(0, lambda: self._show_toast(message, kind))
+            notify_system(_("notify.system_title"), system_message)
+            return
+
+        title = result.get("title") or _("notify.download")
+        if status == "completed":
+            message = _("notify.download_done").format(title=title)
+            system_message = _("notify.system_done").format(title=title)
+            kind = "ok"
+        else:
+            message = _("notify.download_error")
+            system_message = _("notify.system_error").format(title=title)
+            kind = "error"
+        self.after(0, lambda: self._show_toast(message, kind))
+        notify_system(_("notify.system_title"), system_message)
 
     def _cleanup_active_downloads(self):
         """Remove entradas cuja thread já terminou para evitar memory leak."""
@@ -254,7 +325,9 @@ class DownloadHandler:
 
         def extract_and_download():
             try:
-                info = self.yt_service.extract_info(url, cookies_browser=cookies_browser)
+                info = self.yt_service.extract_info(
+                    url, cookies_browser=cookies_browser, cookies_file=self.cookies_file
+                )
                 if not info:
 
                     def show_info_failed():
@@ -373,6 +446,7 @@ class DownloadHandler:
                         cancel_event=cancel_event,
                         pause_event=pause_event,
                         cookies_browser=cookies_browser,
+                        cookies_file=self.cookies_file,
                         proxy=self.proxy,
                         retries=self.retries,
                         socket_timeout=self.socket_timeout,
@@ -384,6 +458,7 @@ class DownloadHandler:
                         sponsorblock_categories=self.sponsorblock_categories,
                         concurrent_fragments=self.concurrent_fragments,
                         tiktok_watermark_removal=self.tiktok_watermark_removal,
+                        transient_retries=getattr(self, "transient_retries", 0),
                     )
                     if result.get("status") == "completed":
                         self.after(0, lambda: card.update_progress({"status": "finished"}))
@@ -415,6 +490,7 @@ class DownloadHandler:
                             status="error",
                             mode=mode,
                         )
+                    self._notify_result(result)
                 except Exception as e:
                     self.logger.error("Erro na thread: %s", e)
                     if track_queue:
@@ -462,7 +538,9 @@ class DownloadHandler:
         mode = self.download_type.get()
 
         def extract_playlist():
-            info = self.yt_service.extract_playlist_info(url, cookies_browser=cookies_browser)
+            info = self.yt_service.extract_playlist_info(
+                url, cookies_browser=cookies_browser, cookies_file=self.cookies_file
+            )
             if not info or "entries" not in info:
                 self.after(
                     0,
@@ -483,6 +561,10 @@ class DownloadHandler:
             def open_ui():
                 card.destroy()
                 if not selectable:
+                    # Playlist de áudio em arquivo único (concat)
+                    if self.playlist_audio_single and mode == "audio":
+                        self._start_compact_playlist_download(url, playlist_title)
+                        return
                     urls = [e["url"] for e in entries if e.get("url")]
                     if not urls:
                         messagebox.showerror(_("dialog.error"), _("dialog.no_valid_url"))
@@ -620,6 +702,7 @@ class DownloadHandler:
                         cancel_event=item_cancel,
                         pause_event=pause_event,
                         cookies_browser=cookies_browser,
+                        cookies_file=self.cookies_file,
                         proxy=self.proxy,
                         retries=self.retries,
                         socket_timeout=self.socket_timeout,
@@ -631,6 +714,7 @@ class DownloadHandler:
                         sponsorblock_categories=self.sponsorblock_categories,
                         concurrent_fragments=self.concurrent_fragments,
                         tiktok_watermark_removal=self.tiktok_watermark_removal,
+                        transient_retries=getattr(self, "transient_retries", 0),
                     )
 
                     with lock:
@@ -720,6 +804,13 @@ class DownloadHandler:
                     self.after(0, lambda: card.update_progress({"status": "finished", "status_text": msg}))
                     self.after(0, card.disable_pause)
                     self.logger.info("Lote concluido: %d/%d bem-sucedidos", success, len(urls))
+                    self._notify_result(
+                        {
+                            "status": "completed" if not erro else "error",
+                            "title": _("batch.summary").format(success=success),
+                        },
+                        batch=True,
+                    )
                 except Exception:
                     pass
             except Exception as e:
@@ -734,6 +825,86 @@ class DownloadHandler:
                 "card": card,
                 "cancel_event": cancel_event,
                 "pause_event": pause_event,
+            }
+        )
+        self._set_download_active(True)
+
+    # ── Playlist de áudio em arquivo único (compact) ───────────
+
+    def _start_compact_playlist_download(self, url: str, playlist_title: str):
+        """Baixa uma playlist inteira em um único arquivo de áudio (concat)."""
+        card = DownloadCard(
+            self.downloads_frame,
+            title=_("batch.playlist_title").format(title=playlist_title, count=1),
+        )
+        card.pack(fill="x", padx=5, pady=5)
+
+        cancel_event = threading.Event()
+        pause_event = threading.Event()
+        cookies_browser = self._get_cookies_browser()
+
+        card.cancel_callback = cancel_event.set
+        card.pause_callback = lambda: pause_event.set()
+        card.resume_callback = lambda: pause_event.clear()
+
+        self._enqueue(url, title=playlist_title, mode="audio")
+
+        def progress_hook(d):
+            self.after(0, lambda: card.update_progress(d))
+
+        def run():
+            with self.semaphore:
+                self._mark_downloading(url)
+                result = self.yt_service.download_playlist_compact(
+                    url=url,
+                    output_path=Path(self.download_path.get()),
+                    audio_fmt=self.audio_format.get(),
+                    organize=self.organize_var.get(),
+                    progress_hook=progress_hook,
+                    cancel_event=cancel_event,
+                    pause_event=pause_event,
+                    cookies_browser=cookies_browser,
+                    cookies_file=self.cookies_file,
+                    proxy=self.proxy,
+                    retries=self.retries,
+                    socket_timeout=self.socket_timeout,
+                    limit_speed=self.limit_speed,
+                    transient_retries=getattr(self, "transient_retries", 0),
+                )
+                if result.get("status") == "completed":
+                    self.after(0, lambda: card.update_progress({"status": "finished"}))
+                    self.after(0, card.disable_pause)
+                    self.logger.info("Playlist compacta concluida: %s", result.get("filename"))
+                    self._mark_done(url)
+                    add_entry(
+                        url=url,
+                        title=result.get("title", playlist_title),
+                        filename=result.get("filename", ""),
+                        status="completed",
+                        mode="audio",
+                        uploader=result.get("uploader", ""),
+                    )
+                elif result.get("status") == "cancelled":
+                    self.after(0, lambda: card.update_progress({"status": "cancelled"}))
+                    self.after(0, card.disable_pause)
+                    self._mark_error(url)
+                else:
+                    self.after(0, lambda: card.update_progress({"status": "error"}))
+                    self.after(0, card.disable_pause)
+                    self._mark_error(url)
+                    add_entry(url=url, title=playlist_title, status="error", mode="audio")
+                self._notify_result(result)
+
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+        self._cleanup_active_downloads()
+        self.active_downloads.append(
+            {
+                "thread": thread,
+                "card": card,
+                "cancel_event": cancel_event,
+                "pause_event": pause_event,
+                "url": url,
             }
         )
         self._set_download_active(True)
@@ -772,16 +943,39 @@ class DownloadHandler:
                 line += f" - {item['uploader']}"
             line += f"  ({ts})"
 
+            row_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+            row_frame.pack(fill="x", padx=5, pady=2)
+
             lbl = ctk.CTkLabel(
-                scroll,
+                row_frame,
                 text=line,
                 font=ctk.CTkFont(size=12),
                 anchor="w",
-                wraplength=700,
+                justify="left",
+                wraplength=520,
             )
-            lbl.pack(anchor="w", padx=5, pady=2)
+            lbl.pack(side="left", anchor="w", fill="x", expand=True)
+
+            item_url = item.get("url", "")
+            item_mode = item.get("mode") or "video"
+            if item_url:
+                ctk.CTkButton(
+                    row_frame,
+                    text=_("history.redownload"),
+                    width=130,
+                    font=ctk.CTkFont(size=11),
+                    command=lambda u=item_url, m=item_mode: self._redownload_from_history(u, m),
+                ).pack(side="right", padx=(5, 0))
 
         ctk.CTkButton(win, text=_("btn.fechar"), command=win.destroy, width=100).grid(row=1, column=0, pady=10)
+
+    def _redownload_from_history(self, url: str, mode: str):
+        """Reinicia o download de um item do historico (mesmo tipo do registro)."""
+        self.logger.info("Re-baixando do historico: %s", url)
+        self.download_type.set(mode)
+        self.download_mode.set("video")
+        self._set_url_text(url)
+        self._on_download_clicked()
 
     def _clear_history(self):
         resposta = messagebox.askyesno(_("dialog.clear_history"), _("dialog.clear_history_body"), icon="warning")

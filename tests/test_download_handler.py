@@ -3,6 +3,85 @@
 from app.ui.download_handler import DownloadHandler
 
 
+class TestPasteFromClipboard:
+    """Testes para _paste_from_clipboard (colagem empilhando URLs)."""
+
+    def _make(self, initial: str = "", clipboard: str | Exception = ""):
+        class Fake:
+            def __init__(self, text, clip):
+                self._text = text
+                self._clip = clip
+
+            def clipboard_get(self):
+                if isinstance(self._clip, Exception):
+                    raise self._clip
+                return self._clip
+
+            def _get_url_text(self):
+                return self._text.strip()
+
+            def _set_url_text(self, text):
+                self._text = text
+
+        fake = Fake(initial, clipboard)
+        DownloadHandler._paste_from_clipboard(fake)
+        return fake._text
+
+    def test_cola_em_campo_vazio(self):
+        assert self._make(initial="", clipboard="https://youtu.be/abc") == "https://youtu.be/abc"
+
+    def test_empilha_quando_ja_existe_texto(self):
+        text = self._make(initial="https://youtube.com/watch?v=1", clipboard="https://youtube.com/watch?v=2")
+        assert text == "https://youtube.com/watch?v=1\nhttps://youtube.com/watch?v=2"
+
+    def test_empilha_varias_urls(self):
+        text = self._make(initial="https://a.com\nhttps://b.com", clipboard="https://c.com")
+        assert text == "https://a.com\nhttps://b.com\nhttps://c.com"
+
+    def test_remove_espacos_do_clipboard(self):
+        text = self._make(initial="https://a.com", clipboard="  https://b.com  ")
+        assert text == "https://a.com\nhttps://b.com"
+
+    def test_remove_nova_linha_final_do_clipboard(self):
+        text = self._make(initial="https://a.com", clipboard="https://b.com\n")
+        assert text == "https://a.com\nhttps://b.com"
+
+    def test_clipboard_vazio_nao_altera(self):
+        assert self._make(initial="https://a.com", clipboard="") == "https://a.com"
+
+    def test_clipboard_vazio_em_campo_vazio(self):
+        assert self._make(initial="", clipboard="") == ""
+
+    def test_erro_ao_ler_clipboard_nao_altera(self):
+        assert self._make(initial="https://a.com", clipboard=RuntimeError("clipboard vazio")) == "https://a.com"
+
+
+class TestUrlsFromFile:
+    """Testes para _urls_from_file (leitura de lista de URLs de arquivo)."""
+
+    def test_lê_arquivo_com_urls(self, tmp_path):
+        arquivo = tmp_path / "lista.txt"
+        arquivo.write_text(
+            "https://youtube.com/watch?v=1\nlinha sem url\nhttps://youtu.be/2\n",
+            encoding="utf-8",
+        )
+        urls = DownloadHandler._urls_from_file(arquivo)
+        assert urls == ["https://youtube.com/watch?v=1", "https://youtu.be/2"]
+
+    def test_arquivo_inexistente_retorna_vazio(self, tmp_path):
+        assert DownloadHandler._urls_from_file(tmp_path / "nao_existe.txt") == []
+
+    def test_arquivo_vazio(self, tmp_path):
+        arquivo = tmp_path / "vazio.txt"
+        arquivo.write_text("", encoding="utf-8")
+        assert DownloadHandler._urls_from_file(arquivo) == []
+
+    def test_ignora_duplicadas(self, tmp_path):
+        arquivo = tmp_path / "dup.txt"
+        arquivo.write_text("https://youtube.com/watch?v=1\nhttps://youtube.com/watch?v=1\n", encoding="utf-8")
+        assert DownloadHandler._urls_from_file(arquivo) == ["https://youtube.com/watch?v=1"]
+
+
 class TestExtractUrls:
     """Testes para _extract_urls (método estático)."""
 

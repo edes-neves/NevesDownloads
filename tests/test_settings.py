@@ -98,3 +98,31 @@ class TestSettings:
     def test_limit_speed(self):
         settings.save("limit_speed", 1048576)
         assert settings.load("limit_speed") == 1048576
+
+    def test_cookies_file_path_default(self):
+        assert settings.load("cookies_file_path") == ""
+
+    def test_cookies_file_path_save(self):
+        settings.save("cookies_file_path", "/tmp/cookies.txt")
+        assert settings.load("cookies_file_path") == "/tmp/cookies.txt"
+
+    def test_playlist_audio_single_default(self):
+        assert settings.load("playlist_audio_single") is False
+
+    def test_playlist_audio_single_save(self):
+        settings.save("playlist_audio_single", True)
+        assert settings.load("playlist_audio_single") is True
+
+    def test_transient_retries_default(self):
+        assert settings.load("transient_retries") == 2
+
+    def test_transient_retries_save(self):
+        settings.save("transient_retries", 5)
+        assert settings.load("transient_retries") == 5
+
+    def test_notifications_enabled_default(self):
+        assert settings.load("notifications_enabled") is True
+
+    def test_notifications_enabled_save(self):
+        settings.save("notifications_enabled", False)
+        assert settings.load("notifications_enabled") is False

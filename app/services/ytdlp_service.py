@@ -80,6 +80,32 @@ def _needs_impersonation(url: str) -> bool:
     return "facebook.com" in host or "fbcdn.net" in host
 
 
+# Erros transitórios: rede, rate limit, timeouts e 5xx valem nova tentativa
+_TRANSIENT_PATTERNS = (
+    "timed out",
+    "timeout",
+    "connection error",
+    "connection refused",
+    "name resolution",
+    "socket error",
+    "failed to establish",
+    "http error 408",
+    "http error 429",
+    "http error 500",
+    "http error 502",
+    "http error 503",
+    "http error 504",
+    "rate limit",
+    "too many requests",
+)
+
+
+def _is_transient_error(exc: Exception) -> bool:
+    """True se o erro é provavelmente transitório (rede/rate limit/5xx)."""
+    msg = str(exc).lower()
+    return any(p in msg for p in _TRANSIENT_PATTERNS)
+
+
 class YtDlpService:
     """Serviço para interagir com yt-dlp."""
 
@@ -113,6 +139,7 @@ class YtDlpService:
     def _build_base_opts(
         self,
         cookies_browser: str | None = None,
+        cookies_file: str | None = None,
         proxy: str | None = None,
         retries: int | None = None,
         socket_timeout: int | None = None,
@@ -129,6 +156,10 @@ class YtDlpService:
             opts["proxy"] = proxy
         if cookies_browser:
             opts["cookiesfrombrowser"] = (cookies_browser,)
+        # cookies.txt (export do navegador) tem prioridade sobre cookiesfrombrowser
+        if cookies_file and Path(cookies_file).is_file():
+            opts["cookiefile"] = cookies_file
+            opts.pop("cookiesfrombrowser", None)
         # FFmpeg empacotado (PyInstaller) precisa ser informado ao yt-dlp
         if self._ffmpeg_location:
             opts["ffmpeg_location"] = self._ffmpeg_location
@@ -141,9 +172,10 @@ class YtDlpService:
         self,
         url: str,
         cookies_browser: str | None = None,
+        cookies_file: str | None = None,
     ) -> dict[str, Any] | None:
         try:
-            opts = self._build_base_opts(cookies_browser, url=url)
+            opts = self._build_base_opts(cookies_browser, cookies_file=cookies_file, url=url)
             opts["extract_flat"] = False
             opts["noplaylist"] = True
             with yt_dlp.YoutubeDL(opts) as ydl:
@@ -157,6 +189,7 @@ class YtDlpService:
         self,
         url: str,
         cookies_browser: str | None = None,
+        cookies_file: str | None = None,
         playlistend: int | None = None,
     ) -> dict[str, Any] | None:
         """
@@ -164,7 +197,7 @@ class YtDlpService:
         Retorna apenas metadados básicos (título, URL, duração) sem
         resolver cada vídeo individualmente, o que é muito mais rápido.
         """
-        opts = self._build_base_opts(cookies_browser, url=url)
+        opts = self._build_base_opts(cookies_browser, cookies_file=cookies_file, url=url)
         opts["extract_flat"] = True
         opts["ignoreerrors"] = True
         if playlistend:
@@ -184,6 +217,25 @@ class YtDlpService:
         for ch in invalids:
             name = name.replace(ch, "_")
         return name.strip().strip(".")
+
+    def _wait_interruptible(self, delay: float, cancel_event, pause_event) -> bool:
+        """Espera 'delay' segundos respeitando pausa/cancelamento.
+
+        Retorna True se o usuário cancelou durante a espera (backoff).
+        """
+        remaining = delay
+        while remaining > 0:
+            if cancel_event is not None and cancel_event.is_set():
+                return True
+            if pause_event is not None:
+                while pause_event.is_set():
+                    if cancel_event is not None and cancel_event.is_set():
+                        return True
+                    time.sleep(0.3)
+            step = min(remaining, 0.2)
+            time.sleep(step)
+            remaining -= step
+        return False
 
     @staticmethod
     def _cleanup_partial_files(output_path: Path) -> None:
@@ -229,6 +281,7 @@ class YtDlpService:
         cancel_event: threading.Event | None = None,
         pause_event: threading.Event | None = None,
         cookies_browser: str | None = None,
+        cookies_file: str | None = None,
         proxy: str | None = None,
         retries: int | None = None,
         socket_timeout: int | None = None,
@@ -240,6 +293,7 @@ class YtDlpService:
         sponsorblock_categories: str | None = None,
         concurrent_fragments: int = 1,
         tiktok_watermark_removal: bool = False,
+        transient_retries: int = 0,
     ) -> dict[str, Any]:
         quality_map = {
             # A sintaxe `bestvideo*+bestaudio/best` baixa vídeo e áudio em
@@ -271,6 +325,7 @@ class YtDlpService:
 
         ydl_opts = self._build_base_opts(
             cookies_browser,
+            cookies_file=cookies_file,
             proxy=proxy,
             retries=retries,
             socket_timeout=socket_timeout,
@@ -416,7 +471,11 @@ class YtDlpService:
 
         ydl_opts["progress_hooks"] = hooks
 
-        try:
+        # Retry em erros transitórios (rede/rate limit/5xx) com backoff exponencial.
+        # Cada nova tentativa reinicia o download do zero.
+        attempts = max(1, int(transient_retries or 0) + 1)
+
+        def attempt() -> dict[str, Any]:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 if info is None:
@@ -450,19 +509,32 @@ class YtDlpService:
                     "uploader": info.get("uploader", info.get("channel", "")),
                     "filesize": info.get("filesize", 0),
                 }
-        except DownloadCancelledError:
-            logger.info(f"Download cancelado: {url}")
-            self._cleanup_partial_files(output_path)
-            return {
-                "status": "cancelled",
-                "error": "Cancelado pelo usuário.",
-            }
-        except Exception as e:
-            logger.error(f"Erro no download: {e}")
-            return {
-                "status": "error",
-                "error": str(e),
-            }
+
+        last_error: Exception | None = None
+        for attempt_num in range(attempts):
+            if cancel_event is not None and cancel_event.is_set():
+                return {"status": "cancelled", "error": "Cancelado pelo usuário."}
+            try:
+                return attempt()
+            except DownloadCancelledError:
+                logger.info(f"Download cancelado: {url}")
+                self._cleanup_partial_files(output_path)
+                return {
+                    "status": "cancelled",
+                    "error": "Cancelado pelo usuário.",
+                }
+            except Exception as e:
+                last_error = e
+                if attempt_num < attempts - 1 and _is_transient_error(e):
+                    delay = float(min(2**attempt_num, 15))
+                    logger.info("Erro transitório em %s; nova tentativa em %.0fs: %s", url, delay, e)
+                    if self._wait_interruptible(delay, cancel_event, pause_event):
+                        return {"status": "cancelled", "error": "Cancelado pelo usuário."}
+                    continue
+                break
+
+        logger.error(f"Erro no download: {last_error}")
+        return {"status": "error", "error": str(last_error) if last_error else "Erro desconhecido."}
 
     # ── Playlist (múltiplos vídeos) ─────────────────────────────
     # O download é sequencial; cada vídeo passa pelo mesmo fluxo da
@@ -483,6 +555,7 @@ class YtDlpService:
         cancel_event: threading.Event | None = None,
         pause_event: threading.Event | None = None,
         cookies_browser: str | None = None,
+        cookies_file: str | None = None,
         proxy: str | None = None,
         retries: int | None = None,
         socket_timeout: int | None = None,
@@ -494,6 +567,7 @@ class YtDlpService:
         sponsorblock_categories: str | None = None,
         concurrent_fragments: int = 1,
         tiktok_watermark_removal: bool = False,
+        transient_retries: int = 0,
     ) -> list[dict[str, Any]]:
         """
         Baixa uma lista de URLs (vídeos) sequencialmente.
@@ -533,6 +607,7 @@ class YtDlpService:
                 cancel_event=cancel_event,
                 pause_event=pause_event,
                 cookies_browser=cookies_browser,
+                cookies_file=cookies_file,
                 proxy=proxy,
                 retries=retries,
                 socket_timeout=socket_timeout,
@@ -544,6 +619,7 @@ class YtDlpService:
                 sponsorblock_categories=sponsorblock_categories,
                 concurrent_fragments=concurrent_fragments,
                 tiktok_watermark_removal=tiktok_watermark_removal,
+                transient_retries=transient_retries,
             )
             results.append(result)
 
@@ -559,3 +635,129 @@ class YtDlpService:
                 )
 
         return results
+
+    # ── Playlist de áudio em arquivo único ─────────────────────
+    # Usa o postprocessor concat-playlist do yt-dlp (yt-dlp>=2023) para
+    # baixar todos os vídeos da playlist e fundi-los em um único áudio.
+    def download_playlist_compact(
+        self,
+        url: str,
+        output_path: Path,
+        audio_fmt: str = "MP3",
+        organize: bool = False,
+        progress_hook: Callable | None = None,
+        cancel_event: threading.Event | None = None,
+        pause_event: threading.Event | None = None,
+        cookies_browser: str | None = None,
+        cookies_file: str | None = None,
+        proxy: str | None = None,
+        retries: int | None = None,
+        socket_timeout: int | None = None,
+        limit_speed: int = 0,
+        transient_retries: int = 0,
+    ) -> dict[str, Any]:
+        audio_map = {
+            "MP3": ("mp3", "mp3"),
+            "M4A": ("m4a", "m4a"),
+            "FLAC": ("flac", "flac"),
+            "OGG": ("ogg", "ogg"),
+            "WAV": ("wav", "wav"),
+        }
+        _audio_ext, postprocessor_ext = audio_map.get(audio_fmt, ("mp3", "mp3"))
+
+        ydl_opts = self._build_base_opts(
+            cookies_browser,
+            cookies_file=cookies_file,
+            proxy=proxy,
+            retries=retries,
+            socket_timeout=socket_timeout,
+            url=url,
+        )
+        if limit_speed and limit_speed > 0:
+            ydl_opts["ratelimit"] = limit_speed
+
+        ydl_opts.update(
+            {
+                "outtmpl": str(output_path / "%(title)s.%(ext)s"),
+                "format": "bestaudio/best",
+                "noplaylist": False,
+                "concat_playlist": "always",
+                "ignoreerrors": True,
+                "extract_flat": False,
+                "postprocessors": [
+                    {
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": postprocessor_ext,
+                        "preferredquality": "0",
+                    }
+                ],
+            }
+        )
+
+        hooks = []
+        if progress_hook:
+            hooks.append(progress_hook)
+
+        if cancel_event:
+
+            def _cancel_hook(d):
+                if cancel_event.is_set():
+                    raise DownloadCancelledError("Download cancelado pelo usuário")
+
+            hooks.append(_cancel_hook)
+
+        if pause_event is not None:
+
+            def _pause_hook(d):
+                while pause_event.is_set():
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise DownloadCancelledError("Download cancelado durante pausa")
+                    time.sleep(0.3)
+
+            hooks.append(_pause_hook)
+
+        ydl_opts["progress_hooks"] = hooks
+
+        attempts = max(1, int(transient_retries or 0) + 1)
+
+        def attempt() -> dict[str, Any]:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                if info is None or not info.get("entries"):
+                    return {"status": "error", "error": "Nao foi possivel obter a playlist."}
+
+                # Determina o nome do arquivo final (playlist) no diretório de saída
+                base = info.get("title") or "playlist"
+                final_path = self._resolve_output_path(output_path, info, organize)
+                filename = str(final_path / f"{self._sanitize_filename(base)}.{_audio_ext}")
+
+                return {
+                    "status": "completed",
+                    "filename": filename,
+                    "title": info.get("title", ""),
+                    "uploader": info.get("uploader", info.get("channel", "")),
+                    "filesize": 0,
+                }
+
+        last_error: Exception | None = None
+        for attempt_num in range(attempts):
+            if cancel_event is not None and cancel_event.is_set():
+                return {"status": "cancelled", "error": "Cancelado pelo usuário."}
+            try:
+                return attempt()
+            except DownloadCancelledError:
+                logger.info(f"Download compacto cancelado: {url}")
+                self._cleanup_partial_files(output_path)
+                return {"status": "cancelled", "error": "Cancelado pelo usuário."}
+            except Exception as e:
+                last_error = e
+                if attempt_num < attempts - 1 and _is_transient_error(e):
+                    delay = float(min(2**attempt_num, 15))
+                    logger.info("Erro transitório no compacto; nova tentativa em %.0fs: %s", delay, e)
+                    if self._wait_interruptible(delay, cancel_event, pause_event):
+                        return {"status": "cancelled", "error": "Cancelado pelo usuário."}
+                    continue
+                break
+
+        logger.error(f"Erro no download compacto: {last_error}")
+        return {"status": "error", "error": str(last_error) if last_error else "Erro desconhecido."}

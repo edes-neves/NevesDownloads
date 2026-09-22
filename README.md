@@ -9,7 +9,9 @@ Gerenciador de downloads de vídeos e áudios com interface moderna, suporte a p
 - Suporte a playlists com seleção individual de vídeos
 - Download de playlists completas ou seleção via checkboxes
 - Suporte a múltiplas URLs simultâneas (colar várias URLs de uma vez)
+- Importação de lista de URLs a partir de arquivo `.txt`
 - Detecção automática de URLs em textos colados de plugins de navegador
+- Retry automático com backoff exponencial em erros transitórios (rede, rate limit, 5xx)
 - Seleção de qualidade: até 4K/2160p, Full HD/1080p, HD/720p, 480p, 360p
 - Formatos de vídeo: MP4, WebM
 - Formatos de áudio: MP3, M4A, FLAC, OGG, WAV
@@ -18,6 +20,8 @@ Gerenciador de downloads de vídeos e áudios com interface moderna, suporte a p
 - Organização automática por canal/uploader
 - Template personalizado de nomes de arquivo com variáveis (`%(title)s`, `%(ext)s`, `%(uploader)s`, etc.)
 - Suporte a cookies de navegador (Chrome, Firefox, Edge, Opera, Vivaldi)
+- Suporte a arquivo de cookies `cookies.txt` (export de extensões), com prioridade sobre cookies de navegador — essencial para conteúdo restrito/age-gated
+- Playlists de áudio em arquivo único (concatena todos os vídeos em um só MP3/M4A/FLAC/OGG/WAV)
 - Otimizações específicas para TikTok (remoção de marca d'água, detecção de tipo de conteúdo)
 - Integração com SponsorBlock para remoção automática de segmentos indesejados
 
@@ -30,24 +34,26 @@ Gerenciador de downloads de vídeos e áudios com interface moderna, suporte a p
 - Menu completo: Arquivo, Download, Configurações, Editar, Exibir, Histórico, Ajuda
 - Navegador de pastas customizado para seleção de destino
 - Janela de seleção de vídeos de playlist com checkboxes
+- Notificação in-app (toast) ao concluir downloads (vídeo, áudio e lotes)
+- Notificação nativa do sistema (notify-send/osascript/PowerShell), desabilitável nas Configurações
 - Atalho Ctrl+V para colar URLs
 
 ### Internacionalização (i18n)
 - Suporte a pt-BR e en-US, configurável nas Configurações
-- ~195 chaves traduzidas em todos os módulos UI e serviços
+- 287 chaves traduzidas em todos os módulos UI e serviços (com teste de paridade)
 - Troca de idioma em tempo real (reinicialização da janela)
 - Labels internos mantidos em pt-BR para compatibilidade de configurações
 
 ### Configurações
-- 25 configurações persistentes organizadas em seções:
-  - **Aparência e Idioma**: Tema, idioma (pt-BR/en-US)
-  - **Padrões de Download**: Tipo, modo, qualidade, formato, cookies, organizar, legendas
-  - **Rede e Desempenho**: Downloads simultâneos, proxy, limite de velocidade, retries, timeout
+- 31 configurações persistentes organizadas em seções:
+  - **Aparência e Idioma**: Tema, idioma (pt-BR/en-US), verificação automática de atualizações
+  - **Padrões de Download**: Tipo, modo, qualidade, formato, cookies (navegador ou cookies.txt), organizar, legendas
+  - **Rede e Desempenho**: Downloads simultâneos, proxy, limite de velocidade, retries, retries em erros transitórios, timeout
   - **SponsorBlock**: Ativar remoção, categorias configuráveis
   - **TikTok**: Remoção de marca d'água
   - **Nomeação de Arquivos**: Template com variáveis documentadas
   - **Thumbnails**: Embutir, salvar separado
-  - **Comportamento**: Confirmação ao sair, auto-limpar concluídos
+  - **Comportamento**: Confirmação ao sair, auto-limpar concluídos, notificações de conclusão
 - Reset para configurações padrão
 - Pré-visualização de tema em tempo real
 
@@ -69,6 +75,7 @@ Gerenciador de downloads de vídeos e áudios com interface moderna, suporte a p
 ### Histórico
 - Histórico persistente (até 500 entradas)
 - Exibição formatada: status, tipo, título, uploader, data
+- Re-download com um clique (mesmo tipo do registro)
 
 ### Auto-update
 - Verificação automática de atualizações via GitHub Releases
@@ -88,10 +95,11 @@ NevesDownloads/
 ├── main.py                          # Ponto de entrada
 ├── app/
 │   ├── __init__.py                  # Exporta init_language, set_language, _
+│   ├── _version.py                  # Fonte única da versão do projeto
 │   ├── constants.py                 # Re-export de core/constants.py (compatibilidade)
 │   ├── i18n.py                      # Internacionalização (~195 chaves, pt-BR/en-US)
 │   ├── core/                        # Domínio da aplicação
-│   │   ├── constants.py             # APP_NAME, APP_VERSION, QUALITY_OPTIONS, etc.
+│   │   ├── constants.py             # APP_NAME, QUALITY_OPTIONS, etc. (versão vem de _version.py)
 │   │   ├── enums.py                 # DownloadStatus, QueueItemStatus, etc. (StrEnum)
 │   │   ├── error_patterns.py        # Registry de padrões de erro do yt-dlp
 │   │   ├── exceptions.py            # DownloadCancelledError
@@ -194,7 +202,8 @@ o AppImage atualizado diretamente pela interface.
 
 Para publicar uma nova versão:
 
-1. Atualize `APP_VERSION` em `app/core/constants.py`
+1. Atualize `__version__` em `app/_version.py` (fonte única — `pyproject.toml`,
+   `APP_VERSION` e os scripts de build consultam este arquivo)
 2. Crie uma tag Git: `git tag v1.0.0`
 3. Push com tag: `git push origin main --tags`
 4. O GitHub Actions criará automaticamente a Release com o AppImage

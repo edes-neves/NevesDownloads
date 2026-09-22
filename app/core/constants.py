@@ -1,7 +1,9 @@
 """Constantes globais do domínio da aplicação."""
 
+import app._version as _version
+
+APP_VERSION = _version.__version__
 APP_NAME = "Neves Downloads"
-APP_VERSION = "1.1.3"
 # Identificador usado na propriedade WM_CLASS do X11 (sem espaços, em minúsculas)
 # para que o usuário possa agrupar/personalizar a janela no gerenciador de janelas.
 APP_WM_CLASS = "nevesdownloads"

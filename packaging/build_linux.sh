@@ -23,7 +23,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 APP_NAME="NevesDownloads"
-APP_VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])' 2>/dev/null || echo "1.0.0")"
+APP_VERSION="$(python packaging/get_version.py 2>/dev/null || echo "0.0.0")"
 APP_CAPITALIZED="Neves Downloads"
 
 BUILD_APPIMAGE=false

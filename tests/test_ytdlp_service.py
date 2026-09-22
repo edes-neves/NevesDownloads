@@ -2,10 +2,14 @@
 
 import sys
 import tempfile
+import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from app.services.ytdlp_service import YtDlpService, _locate_ffmpeg
+from yt_dlp.utils import DownloadError
+
+from app.core.exceptions import DownloadCancelledError
+from app.services.ytdlp_service import YtDlpService, _is_transient_error, _locate_ffmpeg
 
 
 class TestLocateFfmpeg:
@@ -383,3 +387,219 @@ class TestDownloadPlaylistParams:
             )
             assert mock_dl.call_count == 3
             assert len(results) == 3
+
+
+class TestCookiesFile:
+    """Testes para o suporte a arquivo de cookies (cookies.txt)."""
+
+    def setup_method(self):
+        self.service = YtDlpService()
+
+    def test_cookies_file_usado_se_existir(self, tmp_path):
+        cookies = tmp_path / "cookies.txt"
+        cookies.write_text("# Netscape HTTP Cookie File\n")
+        opts = self.service._build_base_opts(cookies_browser="firefox", cookies_file=str(cookies))
+        assert opts["cookiefile"] == str(cookies)
+        # cookiefile tem prioridade: cookies de navegador são descartados
+        assert "cookiesfrombrowser" not in opts
+
+    def test_cookies_file_inexistente_ignorado(self):
+        opts = self.service._build_base_opts(cookies_file="/nao/existe/cookies.txt")
+        assert "cookiefile" not in opts
+
+    @patch("app.services.ytdlp_service.yt_dlp.YoutubeDL")
+    def test_extract_info_passa_cookies_file(self, mock_ydl_cls, tmp_path):
+        cookies = tmp_path / "cookies.txt"
+        cookies.write_text("# Netscape HTTP Cookie File\n")
+        mock_ydl = MagicMock()
+        mock_ydl.extract_info.return_value = {"title": "T"}
+        mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
+        mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        self.service.extract_info("https://youtube.com/watch?v=abc", cookies_file=str(cookies))
+        ydl_opts_used = mock_ydl_cls.call_args[0][0]
+        assert ydl_opts_used["cookiefile"] == str(cookies)
+
+
+class TestDownloadPlaylistCompact:
+    """Testes para download_playlist_compact (playlist de áudio em arquivo único)."""
+
+    def setup_method(self):
+        self.service = YtDlpService()
+
+    @patch("app.services.ytdlp_service.yt_dlp.YoutubeDL")
+    def test_compact_configura_concat_e_audio(self, mock_ydl_cls, tmp_path):
+        mock_ydl = MagicMock()
+        mock_ydl.extract_info.return_value = {
+            "title": "Minha Playlist",
+            "uploader": "Artista",
+            "entries": [{"id": "1"}, {"id": "2"}],
+        }
+        mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
+        mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        result = self.service.download_playlist_compact(
+            url="https://youtube.com/playlist?list=PLx",
+            output_path=Path(tmp_path),
+            audio_fmt="MP3",
+        )
+        ydl_opts_used = mock_ydl_cls.call_args[0][0]
+        assert ydl_opts_used["concat_playlist"] == "always"
+        assert ydl_opts_used["noplaylist"] is False
+        assert ydl_opts_used["format"] == "bestaudio/best"
+        pps = ydl_opts_used["postprocessors"]
+        assert any(pp["key"] == "FFmpegExtractAudio" and pp["preferredcodec"] == "mp3" for pp in pps)
+        assert result["status"] == "completed"
+        assert str(result["filename"]).endswith("Minha Playlist.mp3")
+
+    @patch("app.services.ytdlp_service.yt_dlp.YoutubeDL")
+    def test_compact_outro_formato_audio(self, mock_ydl_cls, tmp_path):
+        mock_ydl = MagicMock()
+        mock_ydl.extract_info.return_value = {
+            "title": "Mix FLAC",
+            "entries": [{"id": "1"}],
+        }
+        mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
+        mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        result = self.service.download_playlist_compact(
+            url="https://youtube.com/playlist?list=PLx",
+            output_path=Path(tmp_path),
+            audio_fmt="FLAC",
+        )
+        assert result["status"] == "completed"
+        assert str(result["filename"]).endswith("Mix FLAC.flac")
+
+    @patch("app.services.ytdlp_service.yt_dlp.YoutubeDL")
+    def test_compact_sem_entries_erro(self, mock_ydl_cls, tmp_path):
+        mock_ydl = MagicMock()
+        mock_ydl.extract_info.return_value = {"title": "Sem itens"}
+        mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
+        mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        result = self.service.download_playlist_compact(
+            url="https://youtube.com/playlist?list=PLx",
+            output_path=Path(tmp_path),
+        )
+        assert result["status"] == "error"
+
+    @patch("app.services.ytdlp_service.yt_dlp.YoutubeDL")
+    def test_compact_cancelado(self, mock_ydl_cls, tmp_path):
+        mock_ydl = MagicMock()
+        mock_ydl.extract_info.side_effect = DownloadCancelledError("cancelado")
+        mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
+        mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        cancel = __import__("threading").Event()
+        cancel.set()
+        result = self.service.download_playlist_compact(
+            url="https://youtube.com/playlist?list=PLx",
+            output_path=Path(tmp_path),
+            cancel_event=cancel,
+        )
+        assert result["status"] == "cancelled"
+
+
+class TestIsTransientError:
+    """Testes para a detecção de erros transitórios."""
+
+    def test_http_5xx(self):
+        assert _is_transient_error(DownloadError("HTTP Error 503: Service Unavailable")) is True
+
+    def test_http_429(self):
+        assert _is_transient_error(DownloadError("HTTP Error 429: Too Many Requests")) is True
+
+    def test_timeout(self):
+        assert _is_transient_error(DownloadError("Connection timed out")) is True
+
+    def test_erro_permanente(self):
+        assert _is_transient_error(DownloadError("Unsupported URL")) is False
+
+    def test_video_privado(self):
+        assert _is_transient_error(DownloadError("Video unavailable")) is False
+
+
+class TestTransientRetry:
+    """Testes para o retry automático com backoff em erros transitórios."""
+
+    def setup_method(self):
+        self.service = YtDlpService()
+
+    def _mock_ydl(self, mock_ydl_cls, results):
+        mock_ydl = MagicMock()
+        mock_ydl.extract_info.side_effect = results
+        mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
+        mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
+        return mock_ydl
+
+    @patch("app.services.ytdlp_service.yt_dlp.YoutubeDL")
+    @patch("time.sleep", return_value=None)
+    def test_transient_error_retries_then_succeeds(self, mock_sleep, mock_ydl_cls, tmp_path):
+        """503 na 1ª tentativa deve ser seguido de uma 2ª bem-sucedida."""
+        self._mock_ydl(
+            mock_ydl_cls,
+            [DownloadError("HTTP Error 503: Service Unavailable"), {"title": "Vid", "uploader": "Autor"}],
+        )
+        result = self.service.download_video(
+            url="https://youtube.com/watch?v=abc",
+            output_path=Path(tmp_path),
+            transient_retries=2,
+        )
+        assert result["status"] == "completed"
+        assert mock_ydl_cls.call_count == 2
+        assert mock_sleep.called
+
+    @patch("app.services.ytdlp_service.yt_dlp.YoutubeDL")
+    @patch("time.sleep", return_value=None)
+    def test_transient_error_exhausts_retries(self, mock_sleep, mock_ydl_cls, tmp_path):
+        """Transient sempre falhando deve esgotar as tentativas e retornar erro."""
+        self._mock_ydl(
+            mock_ydl_cls,
+            [DownloadError("HTTP Error 503: Service Unavailable")] * 3,
+        )
+        result = self.service.download_video(
+            url="https://youtube.com/watch?v=abc",
+            output_path=Path(tmp_path),
+            transient_retries=2,
+        )
+        assert result["status"] == "error"
+        assert mock_ydl_cls.call_count == 3
+
+    @patch("app.services.ytdlp_service.yt_dlp.YoutubeDL")
+    @patch("time.sleep", return_value=None)
+    def test_non_transient_no_retry(self, mock_sleep, mock_ydl_cls, tmp_path):
+        """Erro permanente não deve gerar novas tentativas."""
+        self._mock_ydl(mock_ydl_cls, [DownloadError("Unsupported URL")])
+        result = self.service.download_video(
+            url="https://youtube.com/watch?v=abc",
+            output_path=Path(tmp_path),
+            transient_retries=2,
+        )
+        assert result["status"] == "error"
+        assert mock_ydl_cls.call_count == 1
+
+    @patch("app.services.ytdlp_service.yt_dlp.YoutubeDL")
+    def test_cancel_during_backoff_returns_cancelled(self, mock_ydl_cls, tmp_path):
+        """Cancelar durante o backoff deve retornar status cancelled."""
+        self._mock_ydl(mock_ydl_cls, [DownloadError("HTTP Error 503: Service Unavailable")])
+        with patch.object(self.service, "_wait_interruptible", return_value=True):
+            result = self.service.download_video(
+                url="https://youtube.com/watch?v=abc",
+                output_path=Path(tmp_path),
+                cancel_event=threading.Event(),
+                transient_retries=2,
+            )
+        assert result["status"] == "cancelled"
+
+    @patch.object(YtDlpService, "download_video")
+    def test_playlist_passa_transient_retries(self, mock_dl):
+        """download_playlist deve propagar transient_retries para download_video."""
+        mock_dl.return_value = {"status": "completed", "title": "Vid"}
+        with tempfile.TemporaryDirectory() as tmp:
+            self.service.download_playlist(
+                urls=["https://youtube.com/watch?v=1"],
+                output_path=Path(tmp),
+                transient_retries=4,
+            )
+            kwargs = mock_dl.call_args[1]
+            assert kwargs["transient_retries"] == 4
