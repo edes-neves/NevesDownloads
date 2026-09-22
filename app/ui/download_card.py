@@ -197,14 +197,8 @@ class DownloadCard(ctk.CTkFrame):
 
         # ETA
         eta = data.get("eta", 0)
-        if eta and eta > 0:
-            hours = eta // 3600
-            minutes = (eta % 3600) // 60
-            seconds = eta % 60
-            if hours > 0:
-                eta_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-            else:
-                eta_str = f"{minutes:02d}:{seconds:02d}"
+        eta_str = self._format_eta(eta)
+        if eta_str:
             parts.append(f"ETA: {eta_str}")
         else:
             parts.append("ETA: --")
@@ -217,6 +211,19 @@ class DownloadCard(ctk.CTkFrame):
             self.cancel_btn.configure(state="disabled", text=_("card.completed"))
         elif data.get("status") in ("error", "cancelled"):
             self.cancel_btn.configure(state="disabled", text=_("card.error"))
+
+    @staticmethod
+    def _format_eta(eta) -> str | None:
+        """Formata o ETA como HH:MM:SS (ou MM:SS), aceitando segundos float."""
+        if not eta or eta <= 0:
+            return None
+        total = int(eta)
+        hours = total // 3600
+        minutes = (total % 3600) // 60
+        seconds = total % 60
+        if hours > 0:
+            return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        return f"{minutes:02d}:{seconds:02d}"
 
     @staticmethod
     def _format_size(size_bytes: int) -> str:

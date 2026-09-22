@@ -148,7 +148,7 @@ class CutFileWindow(ctk.CTkToplevel):
     # ── Helpers ────────────────────────────────────────────────
 
     def _set_status(self, text: str, error: bool = False):
-        self._status_label.configure(text=text, text_color="#d9534f" if error else "")
+        self._status_label.configure(text=text, text_color="#d9534f" if error else None)
 
     def _set_file(self, path: str):
         """Define o arquivo a cortar e atualiza duração/saída."""

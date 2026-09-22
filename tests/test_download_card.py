@@ -68,6 +68,7 @@ class TestDownloadCardLogic:
         card._on_pause = lambda: DownloadCard._on_pause(card)
         card.set_paused = lambda paused: DownloadCard.set_paused(card, paused)
         card._format_size = DownloadCard._format_size
+        card._format_eta = DownloadCard._format_eta
         return card
 
     def test_cancel_sets_flag_and_disables_button(self):
@@ -172,6 +173,14 @@ class TestDownloadCardLogic:
         card.update_progress(data)
         info_text = card.info_label.configure.call_args[1]["text"]
         assert "ETA: --" in info_text
+
+    def test_update_progress_eta_float_does_not_crash(self):
+        """ETA fracionário (float do yt-dlp) não deve estourar formatação."""
+        card = self._make_card()
+        data = {"downloaded_bytes": 100, "total_bytes": 200, "speed": 0, "eta": 65.5}
+        card.update_progress(data)
+        info_text = card.info_label.configure.call_args[1]["text"]
+        assert "ETA: 01:05" in info_text
 
     def test_update_progress_finished_sets_bar_to_1(self):
         card = self._make_card()
