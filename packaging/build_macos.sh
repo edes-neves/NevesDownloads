@@ -96,17 +96,32 @@ echo "=== App gerado: ${OSA_APP} ==="
 
 # ── DMG opcional ──────────────────────────────────────────────────────────────
 if [ "$BUILD_DMG" = true ]; then
+    DMG_OUT="dist/${APP_NAME}-${APP_VERSION}.dmg"
     if command -v create-dmg >/dev/null 2>&1; then
         echo "=== Gerando DMG ==="
-        create-dmg \
+        if create-dmg \
             --volname "${APP_DISPLAY} ${APP_VERSION}" \
             --window-pos 200 120 \
             --window-size 800 400 \
             --icon-size 100 \
             --app-drop-link 600 185 \
-            --icon "${APP_DISPLAY}" 200 190 \
-            "dist/${APP_NAME}-${APP_VERSION}.dmg" \
-            "${OSA_APP}"
+            --icon "${APP_NAME}" 200 190 \
+            "$DMG_OUT" \
+            "${OSA_APP}"; then
+            echo "create-dmg concluído: $DMG_OUT"
+        else
+            echo "create-dmg falhou (AppleScript do Finder em CI); gerando DMG simples via hdiutil..."
+            TMP_STAGE="dist/_dmg_stage"
+            rm -rf "$TMP_STAGE"
+            mkdir -p "$TMP_STAGE"
+            cp -R "${OSA_APP}" "$TMP_STAGE/"
+            hdiutil create \
+                -volname "${APP_DISPLAY} ${APP_VERSION}" \
+                -srcfolder "$TMP_STAGE" \
+                -ov -format UDZO "$DMG_OUT"
+            rm -rf "$TMP_STAGE"
+            echo "DMG (fallback) concluído: $DMG_OUT"
+        fi
     else
         echo "create-dmg não encontrado. Instale com: brew install create-dmg"
         echo "ou arraste o .app para a pasta Applications."
