@@ -672,11 +672,11 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
 
         show_toast(self, message, kind=kind)
 
-    def _open_cut_window(self):
+    def _open_cut_window(self, file_path: str | None = None):
         """Abre a janela para cortar um trecho de vídeo/áudio baixado."""
         from app.ui.cut_window import CutFileWindow
 
-        CutFileWindow(self)
+        CutFileWindow(self, initial_file=file_path)
 
     def _open_settings_window(self):
         """Abre a janela de configurações avançadas persistentes."""

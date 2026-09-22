@@ -47,7 +47,7 @@ def _format_duration_label(seconds: float | None) -> str:
 class CutFileWindow(ctk.CTkToplevel):
     """Janela modal de corte de um trecho do arquivo selecionado."""
 
-    def __init__(self, parent):
+    def __init__(self, parent, initial_file: str | None = None):
         super().__init__(parent)
         self._app = parent
         self._ffmpeg = _locate_ffmpeg()
@@ -71,6 +71,9 @@ class CutFileWindow(ctk.CTkToplevel):
         self._end_var = ctk.StringVar()
 
         self._build_widgets()
+
+        if initial_file:
+            self._set_file(initial_file)
 
     def _build_widgets(self):
         padx = 12
@@ -147,15 +150,22 @@ class CutFileWindow(ctk.CTkToplevel):
     def _set_status(self, text: str, error: bool = False):
         self._status_label.configure(text=text, text_color="#d9534f" if error else "")
 
-    def _browse(self):
-        path = filedialog.askopenfilename(parent=self, title=_("cut.browse_title"), filetypes=_MEDIA_FILETYPES)
-        if not path:
+    def _set_file(self, path: str):
+        """Define o arquivo a cortar e atualiza duração/saída."""
+        if not path or not Path(path).is_file():
+            self._set_status(_("cut.no_file"), error=True)
             return
         self._path_var.set(path)
         self._duration = get_media_duration(path, ffmpeg_location=self._ffmpeg)
         self._duration_label.configure(text=_("cut.duration").format(duration=_format_duration_label(self._duration)))
         self._output_label.configure(text=_("cut.output").format(path=make_cut_output(path)))
         self._set_status("")
+
+    def _browse(self):
+        path = filedialog.askopenfilename(parent=self, title=_("cut.browse_title"), filetypes=_MEDIA_FILETYPES)
+        if not path:
+            return
+        self._set_file(path)
 
     def _on_close(self):
         self.cancel_event.set()

@@ -464,6 +464,12 @@ class DownloadHandler:
                         self.after(0, lambda: card.update_progress({"status": "finished"}))
                         self.after(0, card.disable_pause)
                         self.logger.info("Download concluido: %s", result.get("filename"))
+                        filename = result.get("filename", "")
+                        if filename:
+                            self.after(
+                                0,
+                                lambda fn=filename: card.enable_cut(lambda: self._open_cut_window(file_path=fn)),
+                            )
                         if track_queue:
                             self._mark_done(url)
                         add_entry(
@@ -491,6 +497,7 @@ class DownloadHandler:
                             mode=mode,
                         )
                     self._notify_result(result)
+                    self.after(300, self._cleanup_active_downloads)
                 except Exception as e:
                     self.logger.error("Erro na thread: %s", e)
                     if track_queue:
@@ -506,6 +513,7 @@ class DownloadHandler:
                         ),
                     )
                     self.after(0, card.disable_pause)
+                    self.after(300, self._cleanup_active_downloads)
 
         thread = threading.Thread(target=download_thread, daemon=True)
         thread.start()
@@ -520,6 +528,10 @@ class DownloadHandler:
                 "url": url,
             }
         )
+        # Reafirma o estado ativo: a cleanup acima pode ter esvaziado a lista
+        # (thread de extração já terminou) e trocado o botão para "Iniciar",
+        # mesmo com um download em andamento.
+        self._set_download_active(True)
         return thread, card, cancel_event, pause_event
 
     # ── Playlist ───────────────────────────────────────────────
@@ -729,6 +741,12 @@ class DownloadHandler:
                         self.after(0, lambda: item_card.update_progress({"status": "finished"}))
                         self.after(0, item_card.disable_pause)
                         self.logger.info("Download concluido: %s", result.get("filename"))
+                        filename = result.get("filename", "")
+                        if filename:
+                            self.after(
+                                0,
+                                lambda fn=filename: item_card.enable_cut(lambda: self._open_cut_window(file_path=fn)),
+                            )
                         self._mark_done(url)
                         add_entry(
                             url=url,
@@ -811,6 +829,7 @@ class DownloadHandler:
                         },
                         batch=True,
                     )
+                    self.after(300, self._cleanup_active_downloads)
                 except Exception:
                     pass
             except Exception as e:
@@ -875,6 +894,12 @@ class DownloadHandler:
                     self.after(0, lambda: card.update_progress({"status": "finished"}))
                     self.after(0, card.disable_pause)
                     self.logger.info("Playlist compacta concluida: %s", result.get("filename"))
+                    filename = result.get("filename", "")
+                    if filename:
+                        self.after(
+                            0,
+                            lambda fn=filename: card.enable_cut(lambda: self._open_cut_window(file_path=fn)),
+                        )
                     self._mark_done(url)
                     add_entry(
                         url=url,
@@ -894,6 +919,7 @@ class DownloadHandler:
                     self._mark_error(url)
                     add_entry(url=url, title=playlist_title, status="error", mode="audio")
                 self._notify_result(result)
+                self.after(300, self._cleanup_active_downloads)
 
         thread = threading.Thread(target=run, daemon=True)
         thread.start()

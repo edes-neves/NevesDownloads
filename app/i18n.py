@@ -229,6 +229,7 @@ _PT_BR: dict[str, str] = {
     "card.cancelling": "Cancelando...",
     "card.completed": "Concluído",
     "card.error": "Erro",
+    "card.cut": "Cortar",
     # ── PlaylistWindow ──
     "playlist.title": "Selecionar vídeos da playlist",
     "playlist.header": "Playlist: {title}",
@@ -639,6 +640,7 @@ _EN_US: dict[str, str] = {
     "card.cancelling": "Cancelling...",
     "card.completed": "Completed",
     "card.error": "Error",
+    "card.cut": "Trim",
     # ── PlaylistWindow ──
     "playlist.title": "Select playlist videos",
     "playlist.header": "Playlist: {title}",

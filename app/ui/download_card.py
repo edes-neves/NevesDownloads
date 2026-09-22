@@ -22,6 +22,7 @@ class DownloadCard(ctk.CTkFrame):
         self.cancel_callback = cancel_callback
         self.pause_callback = pause_callback
         self.resume_callback = resume_callback
+        self.cut_callback = None
         self.cancelled = False
         self._paused = False
 
@@ -74,8 +75,31 @@ class DownloadCard(ctk.CTkFrame):
         )
         self.cancel_btn.pack(side="left")
 
+        # Botão cortar (aparece quando o download conclui e o arquivo existe)
+        self.cut_btn = ctk.CTkButton(
+            self.btn_anchor,
+            text=_("card.cut"),
+            width=65,
+            height=25,
+            font=ctk.CTkFont(size=11),
+            command=self._on_cut,
+            fg_color="#2b6b8c",
+            hover_color="#1e4f6b",
+        )
+
         # Armazenar última atualização para cálculos
         self.last_update: dict[str, float] = {}
+
+    def enable_cut(self, callback=None):
+        """Mostra o botão 'Cortar' e define a ação de corte do arquivo."""
+        self.cut_callback = callback
+        if callback is not None and not self.cut_btn.winfo_ismapped():
+            self.cut_btn.pack(side="left", padx=(5, 0))
+
+    def _on_cut(self):
+        """Dispara a ação de corte, se configurada (abre a janela de corte)."""
+        if self.cut_callback:
+            self.cut_callback()
 
     def _on_cancel(self):
         """Callback do botão cancelar."""

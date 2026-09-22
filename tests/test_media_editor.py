@@ -16,6 +16,17 @@ from app.services.media_editor import (
     parse_duration_from_ffmpeg,
     parse_timestamp,
 )
+from app.ui.cut_window import _format_duration_label
+
+
+class TestFormatDurationLabel:
+    """Testes do helper de exibição da duração na janela de corte."""
+
+    def test_formata_hh_mm_ss(self):
+        assert _format_duration_label(3723.5) == "01:02:03"
+
+    def test_duracao_desconhecida(self):
+        assert _format_duration_label(None) == "--"
 
 
 class TestParseTimestamp:
