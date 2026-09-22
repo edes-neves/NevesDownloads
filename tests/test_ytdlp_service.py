@@ -234,6 +234,9 @@ class TestTikTokIntegration:
 
     def setup_method(self):
         self.service = YtDlpService()
+        # O teste valida a lógica de formato do TikTok, não a detecção de FFmpeg;
+        # garante que o caminho "com FFmpeg" é exercitado mesmo em runner sem binário.
+        self.service.is_ffmpeg_available = MagicMock(return_value=True)
 
     @patch("app.services.ytdlp_service.yt_dlp.YoutubeDL")
     def test_tiktok_qualidade_4k_limitada_1080p(self, mock_ydl_cls):
