@@ -812,32 +812,35 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
 
     def _run_app_update(self, release: dict):
         """Baixa e instala a atualização do aplicativo."""
+        import os as _os
+
         from app.services.app_updater import download_release_asset, install_update
 
-        # Encontra o AppImage nos assets
-        appimage_asset = None
+        # Encontra o asset da plataforma (AppImage no Linux, .exe no Windows)
+        expected_suffix = ".exe" if _os.name == "nt" else ".AppImage"
+        target_asset = None
         for asset in release.get("assets", []):
-            if asset["name"].endswith(".AppImage"):
-                appimage_asset = asset
+            if asset["name"].endswith(expected_suffix):
+                target_asset = asset
                 break
 
-        if not appimage_asset:
+        if not target_asset:
             messagebox.showerror(
                 _("dialog.update.title"),
                 _("app_updater.no_asset"),
             )
             return
 
-        self.logger.info("Baixando atualização: %s", appimage_asset["name"])
+        self.logger.info("Baixando atualização: %s", target_asset["name"])
 
         def _download():
             import tempfile
             from pathlib import Path
 
-            dest = Path(tempfile.gettempdir()) / appimage_asset["name"]
+            dest = Path(tempfile.gettempdir()) / target_asset["name"]
 
             success = download_release_asset(
-                appimage_asset["browser_download_url"],
+                target_asset["browser_download_url"],
                 dest,
             )
 

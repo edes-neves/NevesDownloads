@@ -1,10 +1,37 @@
 """Testes unitários para app.services.ytdlp_service (métodos utilitários + novos parâmetros)."""
 
+import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from app.services.ytdlp_service import YtDlpService
+from app.services.ytdlp_service import YtDlpService, _locate_ffmpeg
+
+
+class TestLocateFfmpeg:
+    """Testes para a localização do FFmpeg (bundled ou PATH)."""
+
+    def test_prefere_bundled_meipass(self, tmp_path, monkeypatch):
+        ffmpeg = tmp_path / "ffmpeg.exe"
+        ffmpeg.write_bytes(b"falso binario")
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
+        monkeypatch.setattr(sys, "platform", "win32", raising=False)
+        monkeypatch.setattr("app.services.ytdlp_service.shutil.which", lambda _n, **k: None, raising=False)
+        assert _locate_ffmpeg() == str(ffmpeg)
+
+    def test_nao_encontra_sem_bundled(self, monkeypatch):
+        monkeypatch.setattr(sys, "frozen", False, raising=False)
+        monkeypatch.setattr("app.services.ytdlp_service.shutil.which", lambda _n, **k: None, raising=False)
+        monkeypatch.setattr(sys, "platform", "linux", raising=False)
+        assert _locate_ffmpeg() is None
+
+    def test_nao_busca_se_meipass_nao_e_diretorio(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path / "inexistente"), raising=False)
+        monkeypatch.setattr(sys, "platform", "linux", raising=False)
+        monkeypatch.setattr("app.services.ytdlp_service.shutil.which", lambda _n, **k: None, raising=False)
+        assert _locate_ffmpeg() is None
 
 
 class TestYtDlpService:

@@ -1,6 +1,7 @@
 import logging
 import os
 import shutil
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -53,6 +54,26 @@ def _get_impersonate_target():
 _IMPERSONATE_TARGET = _get_impersonate_target()
 
 
+def _locate_ffmpeg() -> str | None:
+    """
+    Localiza o FFmpeg: empacotado junto do executável (PyInstaller) ou no PATH.
+
+    PyInstaller onefile extrai os binários para sys._MEIPASS; em onedir ficam
+    ao lado do executável. Em Windows o nome é ffmpeg.exe.
+    """
+    ffmpeg_name = "ffmpeg.exe" if sys.platform.startswith("win") else "ffmpeg"
+    candidates = []
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            candidates.append(Path(meipass) / ffmpeg_name)
+        candidates.append(Path(sys.executable).parent / ffmpeg_name)
+    for candidate in candidates:
+        if Path(candidate).is_file():
+            return str(candidate)
+    return shutil.which("ffmpeg")
+
+
 def _needs_impersonation(url: str) -> bool:
     """Facebook bloqueia a extração sem fingerprint de navegador; exige impersonação."""
     host = (url or "").lower()
@@ -68,8 +89,12 @@ class YtDlpService:
             logger.info(f"Runtimes JS encontrados: {list(self._js_runtimes.keys())}")
         else:
             logger.warning("Nenhum runtime JavaScript encontrado. Instale deno ou node para melhor compatibilidade.")
-        # Cache do status do FFmpeg
-        self._ffmpeg_available = None
+        # Cache da localização do FFmpeg (bundled ou PATH)
+        self._ffmpeg_location = _locate_ffmpeg()
+        if self._ffmpeg_location:
+            logger.info("FFmpeg encontrado: %s", self._ffmpeg_location)
+        else:
+            logger.warning("FFmpeg não encontrado. Alguns downloads podem falhar.")
         # Opções base compartilhadas para reutilização
         self._base_opts: dict[str, Any] = {
             "quiet": True,
@@ -82,14 +107,8 @@ class YtDlpService:
             self._base_opts["js_runtimes"] = self._js_runtimes
 
     def is_ffmpeg_available(self) -> bool:
-        """Verifica se o FFmpeg está disponível no sistema (com cache)."""
-        if self._ffmpeg_available is None:
-            self._ffmpeg_available = shutil.which("ffmpeg") is not None
-            if self._ffmpeg_available:
-                logger.info("FFmpeg encontrado no sistema.")
-            else:
-                logger.warning("FFmpeg não encontrado. Alguns downloads podem falhar.")
-        return self._ffmpeg_available
+        """Verifica se o FFmpeg está disponível (empacotado ou no sistema)."""
+        return self._ffmpeg_location is not None
 
     def _build_base_opts(
         self,
@@ -110,6 +129,9 @@ class YtDlpService:
             opts["proxy"] = proxy
         if cookies_browser:
             opts["cookiesfrombrowser"] = (cookies_browser,)
+        # FFmpeg empacotado (PyInstaller) precisa ser informado ao yt-dlp
+        if self._ffmpeg_location:
+            opts["ffmpeg_location"] = self._ffmpeg_location
         # Facebook exige fingerprint de navegador; usa impersonação se disponível
         if url and _needs_impersonation(url) and _IMPERSONATE_TARGET is not None:
             opts["impersonate"] = _IMPERSONATE_TARGET

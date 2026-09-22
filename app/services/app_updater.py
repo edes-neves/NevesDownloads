@@ -36,6 +36,8 @@ _UPDATE_CACHE_FILE = get_app_data_dir() / "update_check.json"
 _UPDATE_CACHE_TTL = 3600  # segundos (1h)
 _VER_SEG = re.compile(r"\d+")
 _USER_AGENT = f"{APP_NAME}/{APP_VERSION}"
+# Plataforma-alvo do instalador (constante para permitir testes direcionados).
+_IS_WINDOWS = os.name == "nt"
 
 
 def _get_executable_path() -> Path | None:
@@ -284,12 +286,11 @@ def install_update(asset_path: Path) -> dict:
     """
     Instala uma atualização.
 
-    Em vez de substituir o executável enquanto está a correr (impossível
-    com AppImage/FUSE), copia o novo para <exe>.pending e cria um helper
-    script que, após o app fechar, faz a troca e limpa.
-
-    Nota de limitação: o helper roda em background e depende de bash,
-    flock (util-linux) disponíveis no PATH do sistema.
+    Em vez de substituir o executável enquanto está em execução (impossível
+    com AppImage/FUSE no Linux e com processos .exe no Windows), copia o
+    novo binário para <exe>.pending e cria um helper script que, após o app
+    fechar, faz a troca e relança o app. No Linux o helper é um script bash
+    (depende de bash e flock); no Windows é um .bat via cmd.
 
     Retorna:
         {"success": bool, "message": str, "requires_restart": bool}
@@ -309,27 +310,43 @@ def install_update(asset_path: Path) -> dict:
             "requires_restart": False,
         }
 
+    is_windows = _IS_WINDOWS
+
     try:
-        if not (asset_path.suffix == ".AppImage" or "AppImage" in asset_path.name):
-            return {
-                "success": False,
-                "message": "Formato de asset não suportado: " + asset_path.name,
-                "requires_restart": False,
-            }
+        if is_windows:
+            if asset_path.suffix.lower() != ".exe":
+                return {
+                    "success": False,
+                    "message": "Formato de asset não suportado: " + asset_path.name,
+                    "requires_restart": False,
+                }
+            # Valida que o novo binário é um PE (MZ) íntegro
+            if not _is_valid_pe(asset_path):
+                return {
+                    "success": False,
+                    "message": "Binário baixado não é um executável Windows válido: " + asset_path.name,
+                    "requires_restart": False,
+                }
+            pending = exe.with_suffix(".exe.pending")
+        else:
+            if not (asset_path.suffix == ".AppImage" or "AppImage" in asset_path.name):
+                return {
+                    "success": False,
+                    "message": "Formato de asset não suportado: " + asset_path.name,
+                    "requires_restart": False,
+                }
+            # Valida que o novo binário é um ELF íntegro antes de qualquer substituição
+            if not _is_valid_elf(asset_path):
+                return {
+                    "success": False,
+                    "message": "Binário baixado não é um ELF válido: " + asset_path.name,
+                    "requires_restart": False,
+                }
+            # Torna executável (Linux)
+            asset_path.chmod(asset_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+            pending = exe.with_suffix(".AppImage.pending")
 
-        # Valida que o novo binário é um ELF íntegro antes de qualquer substituição
-        if not _is_valid_elf(asset_path):
-            return {
-                "success": False,
-                "message": "Binário baixado não é um ELF válido: " + asset_path.name,
-                "requires_restart": False,
-            }
-
-        # Torna executável
-        asset_path.chmod(asset_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-
-        # Copia o novo AppImage para <exe>.pending (ao lado do atual)
-        pending = exe.with_suffix(".AppImage.pending")
+        # Copia o novo binário para <exe>.pending (ao lado do atual)
         if pending.exists():
             pending.unlink()
         shutil.copy2(str(asset_path), str(pending))
@@ -337,6 +354,59 @@ def install_update(asset_path: Path) -> dict:
         # Remove o download temporário
         with contextlib.suppress(OSError):
             asset_path.unlink()
+
+        if is_windows:
+            # Helper .bat: espera o app fechar (PID) e troca exe -> .bak,
+            # pending -> exe; renomear um .exe em execução é permitido no
+            # Windows (não é possível sobrescrever/remover).
+            helper = exe.parent / ".update_helper.bat"
+            helper.write_text(
+                (
+                    "@echo off\r\n"
+                    "REM Auto-update helper - espera o app fechar e troca o executavel\r\n"
+                    'set "EXE=%~1"\r\n'
+                    'set "PENDING=%~2"\r\n'
+                    'set "BAK=%~3"\r\n'
+                    'set "APP_PID=%~4"\r\n'
+                    "set /a n=0\r\n"
+                    ":wait\r\n"
+                    'tasklist /fi "PID eq %APP_PID%" 2>nul | findstr /c:"%APP_PID%" >nul\r\n'
+                    "if errorlevel 1 goto replace\r\n"
+                    "set /a n+=1\r\n"
+                    "if %n% geq 30 goto replace\r\n"
+                    "timeout /t 1 /nobreak >nul\r\n"
+                    "goto wait\r\n"
+                    ":replace\r\n"
+                    'if exist "%PENDING%" (\r\n'
+                    '    if exist "%BAK%" del /f /q "%BAK%" 2>nul\r\n'
+                    '    move /y "%EXE%" "%BAK%" >nul 2>nul\r\n'
+                    '    move /y "%PENDING%" "%EXE%" >nul 2>nul\r\n'
+                    ")\r\n"
+                    'del /f /q "%~f0" 2>nul\r\n'
+                    'start "" "%EXE%"\r\n'
+                ),
+                encoding="ascii",
+            )
+            flags = (
+                getattr(subprocess, "DETACHED_PROCESS", 0x8)
+                | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200)
+                | getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            )
+            subprocess.Popen(
+                ["cmd", "/c", str(helper), str(exe), str(pending), str(exe) + ".bak", str(os.getpid())],
+                creationflags=flags,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
+            msg = _("updater.app_updated").format(version=APP_VERSION)
+            logger.info(msg)
+            return {
+                "success": True,
+                "message": msg,
+                "requires_restart": True,
+            }
 
         # Cria helper script que faz a troca após o app fechar.
         # Valores passados por argumentos posicionais ($1..$5) — sem interpolar
@@ -422,4 +492,14 @@ def _is_valid_elf(path: Path) -> bool:
             return f.read(4) == b"\x7fELF"
     except OSError as e:
         logger.error("Falha ao validar ELF de %s: %s", path, e)
+        return False
+
+
+def _is_valid_pe(path: Path) -> bool:
+    """Verifica se o arquivo começa com o magic number de PE/Windows (MZ)."""
+    try:
+        with open(path, "rb") as f:
+            return f.read(2) == b"MZ"
+    except OSError as e:
+        logger.error("Falha ao validar PE de %s: %s", path, e)
         return False

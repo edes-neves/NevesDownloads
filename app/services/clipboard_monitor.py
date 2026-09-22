@@ -5,13 +5,15 @@ Verifica periodicamente se uma URL foi copiada para a área de transferência
 e notifica o aplicativo principal quando detecta. Funciona em segundo plano
 com intervalo configurável (padrão: 1.5 segundos).
 
-Compatível com X11 (xclip/xsel) e Wayland (wl-paste) no Linux.
+Compatível com X11 (xclip/xsel) e Wayland (wl-paste) no Linux, e com o
+clipboard nativo no Windows (API user32, sem depender de GUI/ferramentas).
 
 A leitura do clipboard é feita na própria thread de polling (single-threaded);
 nenhum estado é compartilhado entre threads além de flags de controle.
 """
 
 import logging
+import os
 import re
 import subprocess
 import threading
@@ -22,13 +24,50 @@ logger = logging.getLogger("neves_downloads")
 URL_PATTERN = re.compile(r'https?://[^\s,;<>"\']+')
 _POLL_INTERVAL = 1.5  # segundos
 
-# Hoje só roda em Linux; mantido separado para facilitar adicionar outras
-# ferramentas ou plataformas no futuro.
+# Ferramentas de linha de comando para leitura no Linux.
 _CLIPBOARD_TOOLS = (
     ("xclip", ("xclip", "-selection", "clipboard", "-o")),
     ("xsel", ("xsel", "--clipboard", "--output")),
     ("wl-paste", ("wl-paste",)),
 )
+
+
+def _read_clipboard_windows() -> str | None:
+    """Lê o conteúdo atual da área de transferência no Windows (API user32).
+
+    Usa o formato CF_UNICODETEXT (UTF-16) diretamente via ctypes, sem
+    depender de GUI ou de ferramentas externas.
+    """
+    import ctypes
+
+    CF_UNICODETEXT = 13
+    # windll só existe no Windows; mypy não conhece o atributo da plataforma.
+    user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    user32.GetClipboardData.restype = ctypes.c_void_p
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalSize.restype = ctypes.c_size_t
+
+    if not user32.OpenClipboard(None):
+        return None
+    try:
+        if not user32.IsClipboardFormatAvailable(CF_UNICODETEXT):
+            return None
+        handle = user32.GetClipboardData(CF_UNICODETEXT)
+        if not handle:
+            return None
+        ptr = kernel32.GlobalLock(handle)
+        if not ptr:
+            return None
+        try:
+            size = kernel32.GlobalSize(handle)
+            data = ctypes.string_at(ptr, size)
+            text = data.decode("utf-16-le", errors="ignore").rstrip("\x00").strip()
+            return text or None
+        finally:
+            kernel32.GlobalUnlock(handle)
+    finally:
+        user32.CloseClipboard()
 
 
 class ClipboardMonitor:
@@ -99,7 +138,9 @@ class ClipboardMonitor:
 
     @staticmethod
     def _read_clipboard() -> str | None:
-        """Lê o conteúdo atual da área de transferência no Linux."""
+        """Lê o conteúdo atual da área de transferência (Windows e Linux)."""
+        if os.name == "nt":
+            return _read_clipboard_windows()
         for _tool, args in _CLIPBOARD_TOOLS:
             try:
                 result = subprocess.run(

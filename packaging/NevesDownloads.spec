@@ -12,6 +12,7 @@ Para gerar todos os arquivos separados (modo onedir, util para AppImage):
 """
 
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -33,6 +34,14 @@ assets_dir = project_root / "assets"
 datas = []
 if assets_dir.exists():
     datas.append((str(assets_dir), "assets"))
+
+# ── FFmpeg ──
+# Inclui o ffmpeg junto do executável quando disponível no PATH da máquina
+# de build (relê ffmpeg.exe no Windows), dispensando instalação separada.
+ffmpeg_bin = shutil.which("ffmpeg")
+binaries = []
+if ffmpeg_bin:
+    binaries.append((ffmpeg_bin, "."))
 
 icon_path = assets_dir / "Icone.png"
 icon = str(icon_path) if icon_path.exists() else None
@@ -61,7 +70,7 @@ datas += _ydl_datas
 a = Analysis(
     [str(project_root / "main.py")],
     pathex=[str(project_root)],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
