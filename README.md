@@ -12,6 +12,7 @@ Gerenciador de downloads de vídeos e áudios com interface moderna, suporte a p
 - Importação de lista de URLs a partir de arquivo `.txt`
 - Detecção automática de URLs em textos colados de plugins de navegador
 - Retry automático com backoff exponencial em erros transitórios (rede, rate limit, 5xx)
+- Corte de um trecho de vídeo/áudio baixado (menu Arquivo → "Cortar arquivo...") com remux sem perda de qualidade e fallback para re-encode
 - Seleção de qualidade: até 4K/2160p, Full HD/1080p, HD/720p, 480p, 360p
 - Formatos de vídeo: MP4, WebM
 - Formatos de áudio: MP3, M4A, FLAC, OGG, WAV
@@ -40,7 +41,7 @@ Gerenciador de downloads de vídeos e áudios com interface moderna, suporte a p
 
 ### Internacionalização (i18n)
 - Suporte a pt-BR e en-US, configurável nas Configurações
-- 287 chaves traduzidas em todos os módulos UI e serviços (com teste de paridade)
+- 312 chaves traduzidas em todos os módulos UI e serviços (com teste de paridade)
 - Troca de idioma em tempo real (reinicialização da janela)
 - Labels internos mantidos em pt-BR para compatibilidade de configurações
 

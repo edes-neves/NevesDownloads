@@ -161,6 +161,7 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
         file_menu = tk.Menu(menubar, tearoff=0)
         file_menu.add_command(label=_("menu.file.paste_url"), command=self._paste_from_clipboard, accelerator="Ctrl+V")
         file_menu.add_command(label=_("menu.file.import_list"), command=self._import_urls_from_file)
+        file_menu.add_command(label=_("menu.file.cut"), command=self._open_cut_window)
         file_menu.add_separator()
         file_menu.add_command(label=_("menu.file.exit"), command=self._on_close)
         menubar.add_cascade(label=_("menu.file"), menu=file_menu)
@@ -670,6 +671,12 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
         from app.ui.toast import show_toast
 
         show_toast(self, message, kind=kind)
+
+    def _open_cut_window(self):
+        """Abre a janela para cortar um trecho de vídeo/áudio baixado."""
+        from app.ui.cut_window import CutFileWindow
+
+        CutFileWindow(self)
 
     def _open_settings_window(self):
         """Abre a janela de configurações avançadas persistentes."""
