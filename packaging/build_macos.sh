@@ -63,7 +63,7 @@ if [ ! -d "$OSA_APP" ]; then
         echo "Empacotando .app a partir do onedir..."
         mkdir -p "dist/${APP_NAME}.app/Contents/MacOS"
         mkdir -p "dist/${APP_NAME}.app/Contents/Resources"
-        cp "dist/${APP_NAME}"/* "dist/${APP_NAME}.app/Contents/MacOS/"
+        cp -R "dist/${APP_NAME}"/* "dist/${APP_NAME}.app/Contents/MacOS/"
         if [ -f "assets/Icone.png" ]; then
             cp "assets/Icone.png" "dist/${APP_NAME}.app/Contents/Resources/"
         fi

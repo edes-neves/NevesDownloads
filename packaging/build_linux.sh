@@ -155,9 +155,11 @@ EOF
     chmod +x "$APPDIR/usr/bin/${APP_NAME}"
 
     # FUSE disponível? Se não, executa o appimagetool via extração.
+    # O kernel pode reportar "fuse" em /proc/filesystems sem a biblioteca
+    # user-space, então verificamos a presença de libfuse.so.2 de fato.
     RUN_ARGS=()
-    if ! grep -q "fuse" /proc/filesystems 2>/dev/null && ! [ -e /dev/fuse ]; then
-        echo "FUSE indisponível - usando extração para executar o appimagetool."
+    if ! ldconfig -p 2>/dev/null | grep -q "libfuse\.so\.2"; then
+        echo "libfuse.so.2 indisponível - usando extração para executar o appimagetool."
         RUN_ARGS=(--appimage-extract-and-run)
     fi
 
