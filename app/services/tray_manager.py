@@ -8,6 +8,8 @@ Se o pacote `pystray` não estiver instalado, o sistema degrada graciosamente:
 o fechamento volta a minimizar a janela (iconify) em vez de usar a bandeja.
 """
 
+from __future__ import annotations
+
 import logging
 import threading
 import typing
@@ -22,9 +24,11 @@ try:
     from PIL import Image, ImageDraw
 
     _TRAY_AVAILABLE = True
-except ImportError:
+except Exception:
+    # Ambientes headless/sem display X: o pystray levanta DisplayNameError
+    # (não-ImportError) ao importar; a bandeja então fica desabilitada.
     _TRAY_AVAILABLE = False
-    logger.info("pystray não disponível - bandeja do sistema desabilitada.")
+    logger.info("pystray indisponível (sem display) - bandeja do sistema desabilitada.")
 
 
 class SystemTray:
@@ -45,7 +49,7 @@ class SystemTray:
     def available(self) -> bool:
         return _TRAY_AVAILABLE
 
-    def _create_image(self) -> "Image.Image":
+    def _create_image(self) -> Image.Image:
         """Cria a imagem do ícone (do arquivo, se existir, senão um desenho simples)."""
         if self.icon_path and self.icon_path.exists():
             try:
