@@ -122,6 +122,8 @@ class CutFileWindow(ctk.CTkToplevel):
         # ── Status ──
         self._status_label = ctk.CTkLabel(self, text="", anchor="w", wraplength=520)
         self._status_label.grid(row=5, column=0, columnspan=3, sticky="w", padx=padx, pady=pady)
+        # Cor padrão do label, para restaurar após um erro (customtkinter não aceita None/"")
+        self._status_default_color = self._status_label.cget("text_color")
 
         if not self._ffmpeg:
             self._set_status(_("cut.no_ffmpeg"), error=True)
@@ -148,7 +150,10 @@ class CutFileWindow(ctk.CTkToplevel):
     # ── Helpers ────────────────────────────────────────────────
 
     def _set_status(self, text: str, error: bool = False):
-        self._status_label.configure(text=text, text_color="#d9534f" if error else None)
+        self._status_label.configure(
+            text=text,
+            text_color="#d9534f" if error else self._status_default_color,
+        )
 
     def _set_file(self, path: str):
         """Define o arquivo a cortar e atualiza duração/saída."""
