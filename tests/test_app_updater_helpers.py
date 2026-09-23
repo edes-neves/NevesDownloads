@@ -93,3 +93,44 @@ class TestInstallUpdate:
         asset.write_bytes(b"\x7fELF" + b"\x00" * 16)
         result = install_update(asset)
         assert result["success"] is False
+
+
+class TestCheckForUpdate:
+    """check_for_update deve diferenciar falha/indisponível de 'está atualizado'."""
+
+    def test_modo_dev_retorna_erro(self, monkeypatch):
+        monkeypatch.setattr(app_updater, "_get_executable_path", lambda: None)
+        result = app_updater.check_for_update()
+        assert result["available"] is False
+        assert result["error"] == app_updater.ERR_DEV_MODE
+
+    def test_falha_github_retorna_erro_rede(self, monkeypatch):
+        monkeypatch.setattr(app_updater, "_get_executable_path", lambda: Path("x.AppImage"))
+        monkeypatch.setattr(app_updater, "check_latest_release", lambda: None)
+        result = app_updater.check_for_update()
+        assert result["latest"] == "unknown"
+        assert result["available"] is False
+        assert result["error"] == app_updater.ERR_NETWORK
+
+    def test_atualizado_sem_erro(self, monkeypatch):
+        monkeypatch.setattr(app_updater, "_get_executable_path", lambda: Path("x.AppImage"))
+        monkeypatch.setattr(
+            app_updater,
+            "check_latest_release",
+            lambda: {"version": app_updater.APP_VERSION, "tag": f"v{app_updater.APP_VERSION}"},
+        )
+        result = app_updater.check_for_update()
+        assert result["error"] is None
+        assert result["available"] is False
+
+    def test_atualizacao_disponivel(self, monkeypatch):
+        monkeypatch.setattr(app_updater, "_get_executable_path", lambda: Path("x.AppImage"))
+        monkeypatch.setattr(
+            app_updater,
+            "check_latest_release",
+            lambda: {"version": "99.0.0", "tag": "v99.0.0"},
+        )
+        result = app_updater.check_for_update()
+        assert result["error"] is None
+        assert result["available"] is True
+        assert result["latest"] == "99.0.0"

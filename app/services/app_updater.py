@@ -161,7 +161,12 @@ def check_latest_release() -> dict | None:
         return None
 
 
-def check_for_update() -> dict | None:
+# Códigos de erro da verificação (distinguem "falha" de "está atualizado").
+ERR_DEV_MODE = "dev"
+ERR_NETWORK = "network"
+
+
+def check_for_update() -> dict:
     """
     Verifica se há uma versão mais recente disponível.
 
@@ -171,15 +176,22 @@ def check_for_update() -> dict | None:
             "current": str,
             "latest": str,
             "release": dict | None,
+            "error": str | None,  # None = verificação OK; senão um dos ERR_*
         }
+
+    ``error`` é preenchido quando a API do GitHub não pôde ser consultada ou
+    quando a instalação não suporta auto-update. A UI deve diferenciar isso de
+    "está na versão mais recente".
     """
-    # Modo desenvolvimento (sem executável AppImage) não consulta a API.
+    # Modo desenvolvimento/instalação manual (sem AppImage/frozen) não permite
+    # auto-update — reporta como erro, não como "atualizado".
     if _get_executable_path() is None:
         return {
             "available": False,
             "current": APP_VERSION,
             "latest": "unknown",
             "release": None,
+            "error": ERR_DEV_MODE,
         }
 
     current = APP_VERSION
@@ -191,6 +203,7 @@ def check_for_update() -> dict | None:
             "current": current,
             "latest": "unknown",
             "release": None,
+            "error": ERR_NETWORK,
         }
 
     latest = release["version"]
@@ -211,6 +224,7 @@ def check_for_update() -> dict | None:
         "current": current,
         "latest": latest,
         "release": release,
+        "error": None,
     }
 
 

@@ -27,7 +27,7 @@ if not (project_root / "main.py").exists():
     project_root = Path(".").resolve()
 
 APP_NAME = "NevesDownloads"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.2.1"
 
 # ── Assets ──
 assets_dir = project_root / "assets"
@@ -36,12 +36,21 @@ if assets_dir.exists():
     datas.append((str(assets_dir), "assets"))
 
 # ── FFmpeg ──
-# Inclui o ffmpeg junto do executável quando disponível no PATH da máquina
-# de build (relê ffmpeg.exe no Windows), dispensando instalação separada.
-ffmpeg_bin = shutil.which("ffmpeg")
+# Inclui o ffmpeg junto do executável quando disponível no PATH da máquina de
+# build (e ffmpeg.exe no Windows), dispensando instalação separada.
+#
+# No Linux, se a env FFMPEG_STATIC apontar para um binário estático
+# (build_linux.sh o baixa), ele é preferido: um ffmpeg dinâmico construído na
+# máquina de build (ex.: Ubuntu) pode não executar dentro do AppImage/binário
+# em outras distros (ex.: BigLinux/GNOME) por incompatibilidade de glibc/.so.
+ffmpeg_bin = os.environ.get("FFMPEG_STATIC") or shutil.which("ffmpeg")
 binaries = []
 if ffmpeg_bin:
     binaries.append((ffmpeg_bin, "."))
+
+# O ffmpeg (em especial o estático, ~90 MB) não passa por UPX: compressão
+# pode corromper o binário e só atrasa o build/startup.
+UPX_EXCLUDE = ["ffmpeg"]
 
 icon_path = assets_dir / "Icone.png"
 icon = str(icon_path) if icon_path.exists() else None
@@ -94,6 +103,7 @@ if MODE_ONEDIR:
         bootloader_ignore_signals=False,
         strip=False,
         upx=True,
+        upx_exclude=UPX_EXCLUDE,
         console=False,
         disable_windowed_traceback=False,
         icon=icon,
@@ -114,6 +124,7 @@ else:
         bootloader_ignore_signals=False,
         strip=False,
         upx=True,
+        upx_exclude=UPX_EXCLUDE,
         console=False,
         disable_windowed_traceback=False,
         icon=icon,
@@ -130,6 +141,6 @@ if MODE_ONEDIR:
         a.datas,
         strip=False,
         upx=True,
-        upx_exclude=[],
+        upx_exclude=UPX_EXCLUDE,
         name=APP_NAME,
     )

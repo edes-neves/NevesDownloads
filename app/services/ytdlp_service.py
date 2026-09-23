@@ -1,6 +1,7 @@
 import logging
 import os
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -54,24 +55,50 @@ def _get_impersonate_target():
 _IMPERSONATE_TARGET = _get_impersonate_target()
 
 
+def _ffmpeg_runs(path: str) -> bool:
+    """Confirma que o binário realmente executa (`ffmpeg -version`).
+
+    Evita retornar um ffmpeg que está no lugar mas não roda (por exemplo,
+    dentro de um AppImage quando a extração/mount é noexec ou sem permissão
+    de execução), quebrando downloads e cortes.
+    """
+    try:
+        proc = subprocess.run(
+            [path, "-version"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
+        return proc.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def _locate_ffmpeg() -> str | None:
     """
     Localiza o FFmpeg: empacotado junto do executável (PyInstaller) ou no PATH.
 
     PyInstaller onefile extrai os binários para sys._MEIPASS; em onedir ficam
     ao lado do executável. Em Windows o nome é ffmpeg.exe.
+
+    Só retorna binários que realmente executam (`ffmpeg -version`); se o
+    embutido falhar (AppImage sem exec em mount/MAC), tenta o do sistema.
     """
     ffmpeg_name = "ffmpeg.exe" if sys.platform.startswith("win") else "ffmpeg"
-    candidates = []
+    candidates: list[str] = []
     if getattr(sys, "frozen", False):
         meipass = getattr(sys, "_MEIPASS", None)
         if meipass:
-            candidates.append(Path(meipass) / ffmpeg_name)
-        candidates.append(Path(sys.executable).parent / ffmpeg_name)
+            candidates.append(str(Path(meipass) / ffmpeg_name))
+        candidates.append(str(Path(sys.executable).parent / ffmpeg_name))
+    system = shutil.which("ffmpeg")
+    if system:
+        candidates.append(system)
+
     for candidate in candidates:
-        if Path(candidate).is_file():
-            return str(candidate)
-    return shutil.which("ffmpeg")
+        if Path(candidate).is_file() and _ffmpeg_runs(candidate):
+            return candidate
+    return None
 
 
 def _needs_impersonation(url: str) -> bool:

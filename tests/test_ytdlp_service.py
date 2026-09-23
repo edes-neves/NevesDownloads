@@ -22,7 +22,31 @@ class TestLocateFfmpeg:
         monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
         monkeypatch.setattr(sys, "platform", "win32", raising=False)
         monkeypatch.setattr("app.services.ytdlp_service.shutil.which", lambda _n, **k: None, raising=False)
+        monkeypatch.setattr("app.services.ytdlp_service._ffmpeg_runs", lambda _p: True, raising=False)
         assert _locate_ffmpeg() == str(ffmpeg)
+
+    def test_bundled_inexecutavel_cai_no_sistema(self, tmp_path, monkeypatch):
+        bundled = tmp_path / "ffmpeg"
+        bundled.write_bytes(b"falso binario")
+        system_dir = tmp_path / "sistema"
+        system_dir.mkdir()
+        system = system_dir / "ffmpeg"
+        system.write_bytes(b"sistema ffmpeg")
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
+        monkeypatch.setattr(sys, "platform", "linux", raising=False)
+        monkeypatch.setattr(
+            "app.services.ytdlp_service.shutil.which",
+            lambda _n, **k: str(system),
+            raising=False,
+        )
+        # O embutido existe mas não executa; o do sistema executa.
+        monkeypatch.setattr(
+            "app.services.ytdlp_service._ffmpeg_runs",
+            lambda p: p != str(bundled),
+            raising=False,
+        )
+        assert _locate_ffmpeg() == str(system)
 
     def test_nao_encontra_sem_bundled(self, monkeypatch):
         monkeypatch.setattr(sys, "frozen", False, raising=False)

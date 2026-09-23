@@ -1,5 +1,9 @@
+import os
+import shutil
+import subprocess
 import threading
 import tkinter as tk
+from pathlib import Path
 from tkinter import messagebox
 
 import customtkinter as ctk
@@ -245,14 +249,17 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
     def _set_appearance_light(self):
         ctk.set_appearance_mode("Light")
         settings.save("appearance_mode", "light")
+        self._sync_theme_switch()
 
     def _set_appearance_dark(self):
         ctk.set_appearance_mode("Dark")
         settings.save("appearance_mode", "dark")
+        self._sync_theme_switch()
 
     def _set_appearance_system(self):
         ctk.set_appearance_mode("System")
         settings.save("appearance_mode", "system")
+        self._sync_theme_switch()
 
     def _set_wm_class(self):
         """Garante que o WM_CLASS (X11) seja aplicado corretamente."""
@@ -369,44 +376,154 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
     # ── Widgets da janela principal ─────────────────────────────
 
     def _create_widgets(self):
-        """Cria todos os widgets da janela."""
+        """Cria todos os widgets da janela (layout inspirado no referência)."""
         self._create_menu_bar()
 
-        # Frame principal com padding
-        self.main_frame = ctk.CTkFrame(self, corner_radius=0)
-        self.main_frame.pack(fill="both", expand=True, padx=30, pady=30)
+        # ── Layout geral ──
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(1, weight=1)
 
-        # Título
-        self.title_label = ctk.CTkLabel(self.main_frame, text=APP_NAME, font=ctk.CTkFont(size=32, weight="bold"))
-        self.title_label.grid(row=0, column=0, columnspan=4, pady=(0, 5), sticky="w")
+        # ── Cabeçalho ──
+        header = ctk.CTkFrame(self, corner_radius=0, height=84)
+        header.grid(row=0, column=0, columnspan=2, sticky="ew")
+        header.grid_columnconfigure(1, weight=1)
+        header.grid_propagate(False)
 
-        # Subtítulo
-        self.sub_label = ctk.CTkLabel(self.main_frame, text=_("subtitle"), font=ctk.CTkFont(size=14))
-        self.sub_label.grid(row=1, column=0, columnspan=4, pady=(0, 20), sticky="w")
+        icon = ctk.CTkLabel(
+            header,
+            text="⬇",
+            font=ctk.CTkFont(size=30, weight="bold"),
+            text_color="#3B82F6",
+        )
+        icon.grid(row=0, column=0, padx=(28, 12), pady=16)
 
-        # URL (com menu de contexto)
+        title_box = ctk.CTkFrame(header, fg_color="transparent")
+        title_box.grid(row=0, column=1, sticky="w", pady=12)
+
+        self.title_label = ctk.CTkLabel(
+            title_box,
+            text=APP_NAME,
+            font=ctk.CTkFont(size=24, weight="bold"),
+        )
+        self.title_label.pack(anchor="w")
+
+        self.sub_label = ctk.CTkLabel(
+            title_box,
+            text=_("subtitle"),
+            text_color=("gray35", "gray65"),
+        )
+        self.sub_label.pack(anchor="w")
+
+        self.theme_switch = ctk.CTkSwitch(
+            header,
+            text=_("theme.toggle"),
+            command=self._toggle_theme,
+            onvalue="dark",
+            offvalue="light",
+        )
+        self.theme_switch.grid(row=0, column=2, padx=25)
+        self._sync_theme_switch()
+
+        # ── Painel lateral ──
+        sidebar = ctk.CTkFrame(self, width=230, corner_radius=0)
+        sidebar.grid(row=1, column=0, sticky="nsw")
+        sidebar.grid_propagate(False)
+
+        self.sidebar_modes_data = [
+            ("type.video", "video", "video"),
+            ("type.audio", "audio", "video"),
+            ("mode.playlist_all", "video", "playlist_all"),
+            ("mode.playlist_select", "video", "playlist_select"),
+        ]
+
+        self.sidebar_download_section = ctk.CTkLabel(
+            sidebar,
+            text=_("ui.section.download"),
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#3B82F6",
+        )
+        self.sidebar_download_section.pack(anchor="w", padx=24, pady=(24, 10))
+
+        self.sidebar_mode_buttons = []
+        for key, dtype, dmode in self.sidebar_modes_data:
+            btn = ctk.CTkButton(
+                sidebar,
+                text=_(key),
+                anchor="w",
+                height=38,
+                fg_color="transparent",
+                hover_color=("gray80", "gray20"),
+                command=lambda t=dtype, m=dmode: self._sidebar_select_mode(t, m),
+            )
+            btn.pack(fill="x", padx=14, pady=2)
+            self.sidebar_mode_buttons.append((btn, key, dtype, dmode))
+
+        self.sidebar_destination_section = ctk.CTkLabel(
+            sidebar,
+            text=_("ui.section.destination"),
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#3B82F6",
+        )
+        self.sidebar_destination_section.pack(anchor="w", padx=24, pady=(24, 10))
+
+        dest = ctk.CTkFrame(sidebar, fg_color="transparent")
+        dest.pack(fill="x", padx=14)
+
+        self.sidebar_choose_button = ctk.CTkButton(
+            dest, text=_("btn.choose_folder"), height=36, command=self._choose_folder
+        )
+        self.sidebar_choose_button.pack(fill="x", pady=3)
+
+        self.sidebar_open_button = ctk.CTkButton(
+            dest,
+            text=_("btn.open_folder"),
+            height=36,
+            fg_color="transparent",
+            border_width=1,
+            command=self._open_folder,
+        )
+        self.sidebar_open_button.pack(fill="x", pady=3)
+
+        # ── Conteúdo principal ──
+        self.main_frame = ctk.CTkFrame(self, fg_color="transparent", corner_radius=0)
+        self.main_frame.grid(row=1, column=1, sticky="nsew", padx=28, pady=24)
+        self.main_frame.grid_columnconfigure(0, weight=1)
+
         self.url_label = ctk.CTkLabel(
             self.main_frame,
             text=_("url_label"),
             font=ctk.CTkFont(size=13),
         )
-        self.url_label.grid(row=2, column=0, columnspan=4, sticky="w", pady=(0, 5))
+        self.url_label.grid(row=0, column=0, sticky="w", pady=(0, 5))
+
+        # URL + botão colar (mesma linha)
+        url_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        url_frame.grid(row=1, column=0, sticky="ew", pady=(0, 14))
+        url_frame.grid_columnconfigure(0, weight=1)
 
         self.url_entry = ctk.CTkTextbox(
-            self.main_frame,
-            height=60,
+            url_frame,
+            height=44,
             font=ctk.CTkFont(size=14),
             wrap="char",
         )
         self.url_entry.insert("1.0", "")
-        self.url_entry.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(0, 15))
+        self.url_entry.grid(row=0, column=0, sticky="ew")
 
-        # ── Tipo de download + Qualidade + Cookies (tudo na mesma linha) ──
+        ctk.CTkButton(
+            url_frame,
+            text=_("ctx.paste"),
+            width=84,
+            height=44,
+            command=self._paste_from_clipboard,
+        ).grid(row=0, column=1, padx=(8, 0))
+
+        # ── Tipo de download + Qualidade (mesma linha) ──
         self.type_label = ctk.CTkLabel(self.main_frame, text=_("type.label"), font=ctk.CTkFont(size=13, weight="bold"))
-        self.type_label.grid(row=4, column=0, sticky="w", pady=(0, 5))
+        self.type_label.grid(row=2, column=0, sticky="w", pady=(0, 5))
 
         self.type_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.type_frame.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(0, 10))
+        self.type_frame.grid(row=3, column=0, sticky="ew", pady=(0, 10))
 
         self.radio_video_type = ctk.CTkRadioButton(
             self.type_frame,
@@ -439,7 +556,7 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
 
         # ── Opções condicionais ──
         self.video_options_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.video_options_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(0, 10))
+        self.video_options_frame.grid(row=4, column=0, sticky="ew", pady=(0, 10))
         self.video_options_frame.grid_columnconfigure(0, weight=1)
 
         self.organize_check = ctk.CTkCheckBox(
@@ -452,7 +569,7 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
 
         # Frame para opções de áudio (inicialmente oculto)
         self.audio_options_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.audio_options_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(0, 10))
+        self.audio_options_frame.grid(row=4, column=0, sticky="ew", pady=(0, 10))
         self.audio_options_frame.grid_columnconfigure(0, weight=1)
 
         self.audio_fmt_label = ctk.CTkLabel(self.audio_options_frame, text=_("audio_format"), font=ctk.CTkFont(size=13))
@@ -467,12 +584,17 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
         )
         self.audio_format_menu.grid(row=0, column=0, sticky="w", padx=(140, 0))
 
-        # ── Modo de download (vídeo único / playlist) + Organizar ──
+        # ── Modo de download (vídeo único / playlist) + Legendas ──
         self.mode_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.mode_frame.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(0, 10))
+        self.mode_frame.grid(row=5, column=0, sticky="ew", pady=(0, 10))
 
         self.radio_video = ctk.CTkRadioButton(
-            self.mode_frame, text=_("mode.video"), variable=self.download_mode, value="video", font=ctk.CTkFont(size=13)
+            self.mode_frame,
+            text=_("mode.video"),
+            variable=self.download_mode,
+            value="video",
+            font=ctk.CTkFont(size=13),
+            command=self._on_mode_changed,
         )
         self.radio_video.pack(side="left", padx=(0, 15))
 
@@ -482,6 +604,7 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
             variable=self.download_mode,
             value="playlist_all",
             font=ctk.CTkFont(size=13),
+            command=self._on_mode_changed,
         )
         self.radio_playlist_all.pack(side="left", padx=(0, 15))
 
@@ -491,6 +614,7 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
             variable=self.download_mode,
             value="playlist_select",
             font=ctk.CTkFont(size=13),
+            command=self._on_mode_changed,
         )
         self.radio_playlist_select.pack(side="left", padx=(0, 25))
 
@@ -514,7 +638,7 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
 
         # ── Botões de ação ──
         self.btn_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.btn_frame.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(15, 5))
+        self.btn_frame.grid(row=6, column=0, sticky="ew", pady=(15, 5))
         self.btn_frame.grid_columnconfigure(0, weight=1)
         self.btn_frame.grid_columnconfigure(1, weight=0)
         self.btn_frame.grid_columnconfigure(2, weight=0)
@@ -559,19 +683,83 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
         self.downloads_frame = ctk.CTkScrollableFrame(
             self.main_frame, label_text=_("downloads_active"), height=200, fg_color="transparent"
         )
-        self.downloads_frame.grid(row=9, column=0, columnspan=4, sticky="nsew", pady=(5, 0))
+        self.downloads_frame.grid(row=7, column=0, sticky="nsew", pady=(5, 0))
 
         # Ajuste de pesos
-        self.main_frame.grid_rowconfigure(9, weight=1)
-        self.main_frame.grid_columnconfigure(0, weight=1)
-        self.main_frame.grid_columnconfigure(1, weight=0)
-        self.main_frame.grid_columnconfigure(2, weight=0)
-        self.main_frame.grid_columnconfigure(3, weight=0)
+        self.main_frame.grid_rowconfigure(7, weight=1)
+
+        # ── Rodapé (pasta de destino) ──
+        footer = ctk.CTkLabel(
+            self,
+            textvariable=self.download_path,
+            anchor="w",
+            text_color=("gray40", "gray60"),
+        )
+        footer.grid(row=2, column=0, columnspan=2, sticky="ew", padx=28, pady=(0, 12))
+
+        self._sync_sidebar_modes()
 
     def _configure_grid(self):
         """Configura pesos da grade principal."""
-        self.grid_rowconfigure(0, weight=1)
-        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_columnconfigure(1, weight=1)
+
+    def _toggle_theme(self):
+        """Alterna o tema (escuro/claro) pelo interruptor do cabeçalho."""
+        mode = self.theme_switch.get()
+        ctk.set_appearance_mode(mode)
+        settings.save("appearance_mode", mode)
+        if hasattr(self, "_appearance_var"):
+            self._appearance_var.set(ctk.get_appearance_mode())
+
+    def _sync_theme_switch(self):
+        """Sincroniza o interruptor de tema com o tema atual."""
+        if not hasattr(self, "theme_switch"):
+            return
+        try:
+            current = str(ctk.get_appearance_mode() or "").lower()
+        except Exception:
+            current = "dark"
+        if current == "dark":
+            self.theme_switch.select()
+        else:
+            self.theme_switch.deselect()
+
+    def _sidebar_select_mode(self, dtype: str, dmode: str):
+        """Seleciona um modo rápido pelo painel lateral (tipo + modo)."""
+        self.download_type.set(dtype)
+        self.download_mode.set(dmode)
+        self._on_type_changed()
+        self._sync_sidebar_modes()
+
+    def _sync_sidebar_modes(self):
+        """Destaca o botão lateral correspondente ao tipo/modo selecionado."""
+        for btn, key, dtype, dmode in getattr(self, "sidebar_mode_buttons", []):
+            selected = self.download_type.get() == dtype and self.download_mode.get() == dmode
+            btn.configure(
+                text=_(key),
+                fg_color=("#D9EAFD", "#1F3B5B") if selected else "transparent",
+            )
+
+    def _on_mode_changed(self):
+        """Atualiza o painel lateral ao trocar o modo pelos rádios."""
+        self._sync_sidebar_modes()
+
+    def _open_folder(self):
+        """Abre no gerenciador de arquivos a pasta de destino configurada."""
+        folder = Path(self.download_path.get()).expanduser()
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            if os.name == "nt":
+                os.startfile(str(folder))  # type: ignore[attr-defined]
+            elif shutil.which("xdg-open"):
+                subprocess.Popen(["xdg-open", str(folder)])
+            elif shutil.which("open"):
+                subprocess.Popen(["open", str(folder)])
+            else:
+                messagebox.showinfo(_("dialog.error"), _("dialog.open_folder_tool"))
+        except Exception as exc:
+            messagebox.showerror(_("dialog.error"), _("dialog.open_folder_error").format(error=exc))
 
     def _update_download_buttons(self):
         """Atualiza o texto e estado dos botões conforme o estado dos downloads."""
@@ -657,6 +845,7 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
             self.audio_options_frame.grid_remove()
             self.video_options_frame.grid()
             self.subtitles_check.configure(state="normal")
+        self._sync_sidebar_modes()
 
     def _choose_folder(self):
         dialog = FolderBrowser(self, initial_path=self.download_path.get(), title=_("folder.select"))
@@ -745,6 +934,11 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
         self.cancel_download_button.configure(text=_("btn.cancel_download"))
         self.clear_completed_button.configure(text=_("btn.clear_completed"))
         self.downloads_frame.configure(label_text=_("downloads_active"))
+        self.theme_switch.configure(text=_("theme.toggle"))
+        self.sidebar_download_section.configure(text=_("ui.section.download"))
+        self.sidebar_destination_section.configure(text=_("ui.section.destination"))
+        self.sidebar_choose_button.configure(text=_("btn.choose_folder"))
+        self.sidebar_open_button.configure(text=_("btn.open_folder"))
         self._update_download_buttons()
         self._on_type_changed()
 
@@ -800,15 +994,19 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
 
     def _show_update_complete(self, result: dict):
         """Exibe o resultado da atualização."""
+        msg = str(result.get("message") or "")
+        command = result.get("command")
+        if command:
+            msg = msg + "\n\n" + _("updater.manual_commands_title") + "\n" + str(command)
         if result["success"]:
             messagebox.showinfo(
                 _("dialog.update.title"),
-                _("dialog.update.complete").format(message=result["message"]),
+                _("dialog.update.complete").format(message=msg),
             )
         else:
             messagebox.showerror(
                 _("dialog.update.error_title"),
-                _("dialog.update.error_hint").format(message=result["message"]),
+                _("dialog.update.error_hint").format(message=msg),
             )
 
     # ── Auto-atualização do aplicativo (GitHub Releases) ────────
@@ -841,6 +1039,20 @@ class NevesDownloadsApp(DownloadHandler, TrayHandler, ClipboardHandler, ctk.CTk)
                     _("dialog.update.title"),
                     _("app_updater.failed").format(error="Não foi possível conectar ao GitHub."),
                 )
+            return
+
+        # Falha na verificação ≠ "está atualizado": mostra erro específico.
+        error = result.get("error")
+        if error:
+            self.logger.warning("Verificação de atualização indisponível: %s", error)
+            if not silent_if_uptodate:
+                if error == "dev":
+                    msg = _("app_updater.dev_message")
+                elif error == "network":
+                    msg = _("app_updater.network_error")
+                else:
+                    msg = _("app_updater.failed").format(error=str(error))
+                messagebox.showerror(_("dialog.update.title"), msg)
             return
 
         if not result["available"]:

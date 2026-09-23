@@ -6,7 +6,8 @@ pura (sem dependência de Tk), permitindo teste unitário completo.
 
 Estratégia: tenta primeiro um corte com remux rápido (-c copy, sem perda de
 qualidade); se o FFmpeg falhar (ex.: fluxos que não podem ser copiados),
-re-encoda com libx264/aac.
+re-encoda com codecs compatíveis com o container de saída (webm → VP9/Opus,
+mp3 → LBAME, etc.), evitando erros de muxing.
 """
 
 from __future__ import annotations
@@ -87,6 +88,33 @@ def get_media_duration(path: Path | str, ffmpeg_location: str | None = None) -> 
     return parse_duration_from_ffmpeg(proc.stderr)
 
 
+def _reencode_args(output_path: Path | str, input_is_audio: bool) -> list[str]:
+    """Argumentos de re-encode compatíveis com o container de saída.
+
+    Previne erros de muxing do FFmpeg: H.264/AAC não podem ser gravados em
+    WebM (usa VP9/Opus), e AAC não pode ser multiplexado em MP3 (usa LAME).
+    """
+    suffix = Path(output_path).suffix.lower()
+    if input_is_audio:
+        if suffix == ".mp3":
+            return ["-c:a", "libmp3lame", "-b:a", "192k"]
+        if suffix in {".m4a", ".aac"}:
+            return ["-c:a", "aac", "-b:a", "192k"]
+        if suffix in {".opus", ".ogg"}:
+            return ["-c:a", "libopus", "-b:a", "160k"]
+        if suffix == ".flac":
+            return ["-c:a", "flac"]
+        if suffix == ".wav":
+            return ["-c:a", "pcm_s16le"]
+        return ["-c:a", "aac", "-b:a", "192k"]
+    if suffix == ".webm":
+        return ["-c:v", "libvpx-vp9", "-crf", "34", "-b:v", "0", "-c:a", "libopus"]
+    args = ["-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac"]
+    if suffix in {".mp4", ".mov", ".m4v"}:
+        args += ["-movflags", "+faststart"]
+    return args
+
+
 def build_cut_command(
     ffmpeg: str,
     input_path: Path | str,
@@ -111,11 +139,11 @@ def build_cut_command(
         # Remux rápido: copia os fluxos sem perder qualidade.
         cmd += ["-c", "copy", "-map_metadata", "0", "-avoid_negative_ts", "make_zero"]
     elif _is_audio_file(input_path):
-        # Arquivo só de áudio: re-encoda apenas o áudio.
-        cmd += ["-c:a", "aac", "-b:a", "192k"]
+        # Arquivo só de áudio: re-encoda apenas o áudio, conforme o container.
+        cmd += _reencode_args(output_path, input_is_audio=True)
     else:
         # Re-encoda para cortar em ponto arbitrário quando a cópia falha.
-        cmd += ["-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", "-movflags", "+faststart"]
+        cmd += _reencode_args(output_path, input_is_audio=False)
     cmd.append(str(output_path))
     return cmd
 
@@ -168,7 +196,13 @@ def cut_media(
     """
     ffmpeg = ffmpeg_location or _locate_ffmpeg()
     if not ffmpeg:
-        return {"status": "error", "error": "ffmpeg indisponível"}
+        return {
+            "status": "error",
+            "error": (
+                "ffmpeg não encontrado ou não executável. Instale o FFmpeg no sistema "
+                "(ex.: `sudo apt install ffmpeg`, `sudo pacman -S ffmpeg`, `winget install ffmpeg`)."
+            ),
+        }
 
     source = Path(input_path)
     if not source.is_file():

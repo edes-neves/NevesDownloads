@@ -137,14 +137,30 @@ class TestBuildCutCommand:
         cmd = self._cmd(end=None)
         assert "-to" not in cmd
 
-    def test_reencode_video(self):
+    def test_reencode_video_mp4(self):
         cmd = self._cmd(strategy="reencode", end=10.0)
         assert "libx264" in cmd and "-c:a" in cmd and "aac" in cmd
+        assert "+faststart" in cmd
 
-    def test_reencode_audio(self):
+    def test_reencode_video_webm_usa_vp9_opus(self):
+        cmd = build_cut_command("ffmpeg", Path("video.mp4"), Path("out.webm"), 1.0, 5.0, "reencode")
+        assert "libx264" not in cmd
+        assert "libvpx-vp9" in cmd and "libopus" in cmd
+
+    def test_reencode_audio_mp3_usa_lame(self):
         cmd = build_cut_command("ffmpeg", Path("musica.mp3"), Path("out.mp3"), 1.0, 5.0, "reencode")
         assert "libx264" not in cmd
+        assert "-c:a" in cmd and "libmp3lame" in cmd
+        assert "aac" not in cmd
+
+    def test_reencode_audio_m4a_usa_aac(self):
+        cmd = build_cut_command("ffmpeg", Path("musica.m4a"), Path("out.m4a"), 1.0, 5.0, "reencode")
         assert "-c:a" in cmd and "aac" in cmd
+        assert "libmp3lame" not in cmd
+
+    def test_reencode_audio_wav_usa_pcm(self):
+        cmd = build_cut_command("ffmpeg", Path("audio.wav"), Path("out.wav"), 1.0, 5.0, "reencode")
+        assert "-c:a" in cmd and "pcm_s16le" in cmd
 
 
 class FakeProc:
